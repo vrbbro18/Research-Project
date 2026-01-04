@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Audio Generator - Driver Safety System</title>
+    <style>
+        body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+        button { padding: 10px 20px; margin: 10px; cursor: pointer; }
+        .section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Generate Audio Files for Driver Safety System</h1>
+    <p>Use this tool to download placeholder audio files for testing:</p>
+    
+    <div class="section">
+        <h3>Option 1: Download Placeholder Beeps</h3>
+        <button onclick="generateBeep('alarm', 800, 1)">Download alarm.mp3 (High beep)</button>
+        <button onclick="generateBeep('happy', 500, 0.3)">Download happy.mp3 (Medium beep)</button>
+        <button onclick="generateBeep('calm', 300, 0.5)">Download calm.mp3 (Low beep)</button>
+        <button onclick="generateBeep('upbeat', 600, 0.4)">Download upbeat.mp3 (Mid-high beep)</button>
+    </div>
+
+    <div class="section">
+        <h3>Option 2: Download Real Audio Files</h3>
+        <p>Get free audio from these sources:</p>
+        <ul>
+            <li><a href="https://freesound.org" target="_blank">FreeSound.org</a> - Search for "alarm", "happy music", "calm music"</li>
+            <li><a href="https://www.zapsplat.com" target="_blank">ZapSplat.com</a> - Free sound effects</li>
+            <li><a href="https://pixabay.com/music/" target="_blank">Pixabay Music</a> - Royalty-free music</li>
+        </ul>
+        <p><strong>After downloading:</strong> Rename files to:</p>
+        <ul>
+            <li>alarm.mp3</li>
+            <li>happy.mp3</li>
+            <li>calm.mp3</li>
+            <li>upbeat.mp3</li>
+        </ul>
+        <p>Place them in: <code>frontend/public/assets/</code></p>
+    </div>
+
+    <script>
+        function generateBeep(name, frequency, volume) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const sampleRate = audioContext.sampleRate;
+            const duration = 1; // 1 second
+            const numSamples = sampleRate * duration;
+            const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
+            const channelData = buffer.getChannelData(0);
+
+            for (let i = 0; i < numSamples; i++) {
+                channelData[i] = Math.sin(2 * Math.PI * frequency * i / sampleRate) * volume;
+            }
+
+            // Convert to WAV
+            const wav = audioBufferToWav(buffer);
+            const blob = new Blob([wav], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name + '.wav';
+            a.click();
+            
+            alert(`${name}.wav downloaded! Rename it to ${name}.mp3 and place in frontend/public/assets/`);
+        }
+
+        function audioBufferToWav(buffer) {
+            const numChannels = buffer.numberOfChannels;
+            const sampleRate = buffer.sampleRate;
+            const format = 1; // PCM
+            const bitDepth = 16;
+            
+            const bytesPerSample = bitDepth / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            
+            const data = buffer.getChannelData(0);
+            const dataLength = data.length * bytesPerSample;
+            const bufferLength = 44 + dataLength;
+            
+            const arrayBuffer = new ArrayBuffer(bufferLength);
+            const view = new DataView(arrayBuffer);
+            
+            // WAV header
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + dataLength, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, format, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * blockAlign, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitDepth, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, dataLength, true);
+            
+            // Audio data
+            let offset = 44;
+            for (let i = 0; i < data.length; i++, offset += 2) {
+                const s = Math.max(-1, Math.min(1, data[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            
+            return arrayBuffer;
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+    </script>
+</body>
+</html>
