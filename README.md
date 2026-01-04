@@ -156,26 +156,6 @@ Measuring the effectiveness of **real-time digital interventions** on driver com
 
 ---
 
-## 🧩 System Architecture Diagram
-
-> *(Replace placeholder with actual diagram)*
-
-![System Architecture](docs/architecture/system_architecture.png)
-
----
-
-## 🖼️ Dashboard & Alert Screenshots
-
-> *(Replace placeholders with actual UI screenshots)*
-
-**Enforcement Dashboard**
-![Dashboard](docs/screenshots/dashboard.png)
-
-**Driver Alert Notification**
-![Alert](docs/screenshots/alert_sms.png)
-
----
-
 ## 🛠️ Technical Stack
 
 **Hardware**
@@ -201,12 +181,3 @@ Measuring the effectiveness of **real-time digital interventions** on driver com
 
 ---
 
-## 📂 Repository Structure
-
-```plaintext
-├── 01_Hardware_IoT/          # ESP32 & RFID C++ Firmware
-├── 02_Machine_Learning/      # YOLOv8 Models & Emotion Detection
-├── 03_Backend_API/           # FastAPI Data Processing Hub
-├── 04_Web_Dashboard/         # React Enforcement Panel & Alerts
-├── 05_Analytics_Stats/       # Poisson Forecasting & Risk Logic
-└── docs/                     # Research Papers, PP1 Slides, Diagrams
