@@ -15,9 +15,9 @@
 ## 📌 Table of Contents
 - Research Overview  
 - Problem Background & Motivation  
-- Research Objectives (SLIIT Aligned)  
+- Research Objectives  
 - Individual Research Pillars  
-- System Operational Flow (End-to-End)  
+- System Operational Flow
 - Design Excellence & Novelty  
 - Research Advantages & Expected Outcomes  
 - System Architecture Diagram  
@@ -58,7 +58,7 @@ This research directly addresses these gaps by introducing **real-time enforceme
 
 ---
 
-## 🎯 Research Objectives (SLIIT Rubric Aligned)
+## 🎯 Research Objectives 
 
 ### Main Objective
 To design and evaluate an **IoT and Machine Learning–based smart traffic enforcement system** that enables real-time speed violation detection, immediate driver feedback, and predictive risk analysis to reduce overspeeding-related accidents in Sri Lanka.
