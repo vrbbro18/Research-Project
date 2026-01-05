@@ -21,6 +21,62 @@ router.get('/', requireRole('SUPER_ADMIN', 'OFFICER', 'ANALYST'), (req, res) => 
   });
 });
 
+// POST /violations - Manually add a new violation (SUPER_ADMIN and OFFICER only)
+router.post('/', requireRole('SUPER_ADMIN', 'OFFICER'), (req, res) => {
+  const { vehicleNumber, violationType, timestamp } = req.body;
+
+  // Input validation
+  if (!vehicleNumber || !violationType) {
+    return res.status(400).json({
+      success: false,
+      message: 'vehicleNumber and violationType are required'
+    });
+  }
+
+  // Valid violation types
+  const validViolationTypes = ['Speeding', 'Red Light', 'Parking', 'No Seatbelt', 'Illegal Turn', 'Wrong Lane'];
+  if (!validViolationTypes.includes(violationType)) {
+    return res.status(400).json({
+      success: false,
+      message: `Invalid violationType. Must be one of: ${validViolationTypes.join(', ')}`
+    });
+  }
+
+  // Calculate new violation count for this vehicle (increment total count)
+  const currentTotalViolationCount = alertService.getCurrentViolationCount(violations, vehicleNumber);
+  const newTotalViolationCount = currentTotalViolationCount + 1;
+
+  // Generate new violation ID
+  const newId = violations.length > 0 ? Math.max(...violations.map(v => v.id)) + 1 : 1;
+
+  // Create new violation record
+  const newViolation = {
+    id: newId,
+    vehicleNumber: vehicleNumber.trim(),
+    violationType: violationType,
+    timestamp: timestamp || new Date().toISOString(),
+    violationCount: newTotalViolationCount,
+    source: 'manual' // Mark as manually added for research tracking
+  };
+
+  // Add violation to the array (in-memory storage)
+  violations.push(newViolation);
+
+  // Calculate alert level
+  const alertLevel = alertService.calculateAlertLevel(newTotalViolationCount);
+
+  const violationWithAlert = {
+    ...newViolation,
+    alertLevel: alertLevel
+  };
+
+  res.json({
+    success: true,
+    message: 'Violation added successfully',
+    violation: violationWithAlert
+  });
+});
+
 // GET /violations/:id - Get specific violation (SUPER_ADMIN and OFFICER only)
 router.get('/:id', requireRole('SUPER_ADMIN', 'OFFICER'), (req, res) => {
   const violationId = parseInt(req.params.id);

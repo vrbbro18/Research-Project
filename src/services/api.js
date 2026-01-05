@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001';
+const API_BASE_URL = 'http://localhost:3002';
 
 // Login API
 export const login = async (username, password) => {
@@ -82,6 +82,24 @@ export const sendAlert = async (userRole, vehicleNumber) => {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.message || 'Failed to send alert');
+  }
+  return data;
+};
+
+// Create a new violation manually
+export const createViolation = async (userRole, violationData) => {
+  const response = await fetch(`${API_BASE_URL}/violations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-role': userRole,
+    },
+    body: JSON.stringify(violationData),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to create violation');
   }
   return data;
 };

@@ -348,7 +348,7 @@ const Login = ({ onLogin }) => {
         </form>
 
         {/* Footer/Test Credentials */}
-        <div style={{
+        {/* <div style={{
           marginTop: '36px',
           paddingTop: '28px',
           borderTop: '1px solid rgba(59, 130, 246, 0.2)',
@@ -410,7 +410,7 @@ const Login = ({ onLogin }) => {
               <span style={{ fontFamily: 'monospace', color: '#94a3b8' }}>analyst / analyst123</span>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* Security Notice */}
         <div style={{

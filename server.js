@@ -14,7 +14,7 @@ const alertRoutes = require('./routes/alert');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 
 // Middleware
 app.use(cors());
@@ -48,7 +48,8 @@ app.listen(PORT, () => {
   console.log('  POST /speed - IoT speed sensor input (vehicleNumber, speed)');
   console.log('\nProtected endpoints (require x-user-role header):');
   console.log('  GET /admin - SUPER_ADMIN only');
-  console.log('  GET /violations - SUPER_ADMIN, OFFICER');
+  console.log('  GET /violations - SUPER_ADMIN, OFFICER, ANALYST');
+  console.log('  POST /violations - SUPER_ADMIN, OFFICER (add manual violation)');
   console.log('  GET /charts - SUPER_ADMIN, OFFICER, ANALYST');
   console.log('  GET /driver/:vehicleNumber - SUPER_ADMIN, OFFICER (driver lookup)');
   console.log('  POST /send-alert - SUPER_ADMIN, OFFICER (full alert workflow)');
