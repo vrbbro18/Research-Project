@@ -10,7 +10,7 @@ const Violations = ({ userRole, onLogout }) => {
   const [sendingAlert, setSendingAlert] = useState(null); // Track which vehicle alert is being sent
   const [alertSuccess, setAlertSuccess] = useState(null); // Track successful alert
   const [showAddForm, setShowAddForm] = useState(false); // Toggle for add violation form
-  const [formData, setFormData] = useState({ vehicleNumber: '', violationType: '', timestamp: '' });
+  const [formData, setFormData] = useState({ vehicleNumber: '', violationType: '', timestamp: '', alertLevel: '' });
   const [addingViolation, setAddingViolation] = useState(false);
   const [addSuccess, setAddSuccess] = useState(false);
 
@@ -22,6 +22,9 @@ const Violations = ({ userRole, onLogout }) => {
 
   // Available violation types
   const violationTypes = ['Speeding', 'Red Light', 'Parking', 'No Seatbelt', 'Illegal Turn', 'Wrong Lane'];
+  
+  // Available alert levels
+  const alertLevels = ['LOW', 'WARNING', 'CRITICAL'];
 
   useEffect(() => {
     fetchViolations();
@@ -84,7 +87,8 @@ const Violations = ({ userRole, onLogout }) => {
       const violationData = {
         vehicleNumber: formData.vehicleNumber,
         violationType: formData.violationType,
-        timestamp: formData.timestamp || new Date().toISOString()
+        timestamp: formData.timestamp || new Date().toISOString(),
+        alertLevel: formData.alertLevel || 'LOW'
       };
       
       const response = await createViolation(userRole, violationData);
@@ -168,6 +172,68 @@ const Violations = ({ userRole, onLogout }) => {
       }}></div>
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: '1400px', margin: '0 auto' }}>
+        {/* Success Notification Alert Box */}
+        {alertSuccess && (
+          <div style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(5, 150, 105, 0.95) 100%)',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '12px',
+            boxShadow: '0 8px 32px rgba(16, 185, 129, 0.4)',
+            border: '1px solid rgba(16, 185, 129, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            minWidth: '400px',
+            maxWidth: '90%',
+            animation: 'slideDown 0.3s ease-out',
+            backdropFilter: 'blur(10px)'
+          }}>
+            <span style={{ fontSize: '24px' }}>✓</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: '600', fontSize: '16px', marginBottom: '4px' }}>
+                WhatsApp Alert Sent Successfully!
+              </div>
+              <div style={{ fontSize: '13px', opacity: 0.9 }}>
+                Alert sent to driver: <strong>{alertSuccess.driverName}</strong> for vehicle <strong>{alertSuccess.vehicleNumber}</strong>
+                <br />
+                Alert Level: <strong>{alertSuccess.alertLevel}</strong>
+              </div>
+            </div>
+            <button
+              onClick={() => setAlertSuccess(null)}
+              style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                border: 'none',
+                color: 'white',
+                borderRadius: '6px',
+                width: '28px',
+                height: '28px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)';
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Header Bar */}
         <div style={{
           background: 'linear-gradient(135deg, rgba(26, 31, 58, 0.95) 0%, rgba(15, 20, 25, 0.95) 100%)',
@@ -594,6 +660,68 @@ const Violations = ({ userRole, onLogout }) => {
                         Leave empty to use current time
                       </small>
                     </div>
+
+                    {/* Alert Level Field */}
+                    <div>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginBottom: '10px',
+                        fontWeight: '600',
+                        color: '#e2e8f0',
+                        fontSize: '14px',
+                        letterSpacing: '0.3px'
+                      }}>
+                        <span style={{ fontSize: '18px' }}>🚨</span>
+                        Alert Level
+                        <span style={{
+                          marginLeft: 'auto',
+                          fontSize: '11px',
+                          color: '#64748b',
+                          fontWeight: '400'
+                        }}>(Optional)</span>
+                      </label>
+                      <select
+                        value={formData.alertLevel}
+                        onChange={(e) => setFormData({ ...formData, alertLevel: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '14px 16px',
+                          background: 'rgba(15, 23, 42, 0.6)',
+                          border: '2px solid rgba(59, 130, 246, 0.2)',
+                          borderRadius: '10px',
+                          fontSize: '14px',
+                          color: '#e2e8f0',
+                          fontWeight: '500',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s ease',
+                          outline: 'none'
+                        }}
+                        onFocus={(e) => {
+                          e.currentTarget.style.borderColor = '#3b82f6';
+                          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+                        }}
+                        onBlur={(e) => {
+                          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <option value="" style={{ background: '#1a1f3a', color: '#94a3b8' }}>Select Alert Level...</option>
+                        {alertLevels.map(level => (
+                          <option key={level} value={level} style={{ background: '#1a1f3a', color: '#e2e8f0' }}>{level}</option>
+                        ))}
+                      </select>
+                      <small style={{
+                        display: 'block',
+                        marginTop: '8px',
+                        color: '#64748b',
+                        fontSize: '12px',
+                        fontStyle: 'italic'
+                      }}>
+                        Leave empty to default to LOW
+                      </small>
+                    </div>
                   </div>
 
                   {/* Action Buttons */}
@@ -665,7 +793,7 @@ const Violations = ({ userRole, onLogout }) => {
                       type="button"
                       onClick={() => {
                         setShowAddForm(false);
-                        setFormData({ vehicleNumber: '', violationType: '', timestamp: '' });
+                        setFormData({ vehicleNumber: '', violationType: '', timestamp: '', alertLevel: '' });
                         setError('');
                       }}
                       style={{
@@ -865,6 +993,16 @@ const Violations = ({ userRole, onLogout }) => {
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
           }
         }
       `}</style>
