@@ -1,163 +1,76 @@
-⬡ Smart Highway Speed Violation Prediction & Management System
-From Delayed Fines to Real-Time Behavioral Correction
+🛣️ Smart Highway Speed Violation Prediction & Management System
+“From Delayed Fines to Real-Time Behavioral Correction”
+📋 Project Metadata
+🆔 Project ID: 25-26J-314
 
+🎓 Degree: BSc (Hons) in Information Technology
 
+🏛️ Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
 
+◈ Why This Project Exists
+“On Sri Lankan expressways, speed violations are detected late, reported later, and corrected never.”
 
+Current systems focus on vehicles, not drivers. Fines arrive weeks later, missing the window for behavior correction. This project answers a critical research question: Can instant feedback measurably change driver behavior?
 
+◉ The Solution: A Real-Time Safety Ecosystem
+We transform highway enforcement by combining four cutting-edge domains:
 
+🆔 RFID Infrastructure: Linking Driver + Vehicle identities.
 
+🤖 Machine Learning: Real-time monitoring and speed validation.
 
-Project ID: 25-26J-314
-Degree Programme: BSc (Hons) in Information Technology
-Faculty: Computing | Sri Lanka Institute of Information Technology
+📲 Instant Alerts: Digital enforcement delivered in seconds.
 
-◈ Why This Project Exists (In One Minute)
+📊 Behavioral Analytics: Measuring the "Before vs. After" impact.
 
-On Sri Lankan expressways, speed violations are detected late, reported later, and corrected never.
+▣ The Core Research Gap
+⌬ Research Architecture: Five Pillars
+This project is structured as five integrated research pillars, each addressing a distinct scientific gap.
 
-Drivers often receive fines weeks after the violation — long after the moment when behavior could have been corrected. Existing systems focus on vehicles, not drivers, and provide no insight into whether enforcement actually changes behavior.
+◧ 1. Dashboard & Driver Alert System (Your Component)
+Research Focus: Does real-time feedback reduce repeat violations?
 
-This project was built to answer a simple research question:
+Core Assets: Live WebSockets stream, Secure Authority Dashboard, and Behavioral Impact Analysis.
 
-What happens when enforcement feedback is delivered instantly — and can that feedback measurably change driver behavior?
+◨ 2. IoT & RFID Identity Infrastructure
+Research Focus: Reliable identity verification under environmental stress.
 
-◉ What We Built (High-Level)
+Core Assets: ESP32 + RC522 Gantry system for Dual RFID scanning (License + Plate).
 
-This system transforms highway enforcement into a real-time, data-driven safety ecosystem by combining:
+◩ 3. ML Speed & Vehicle Analysis
+Research Focus: Cross-verification of speed via visual and RFID data.
 
-RFID-based driver & vehicle identity verification
+Core Assets: YOLOv8 classification and Perspective Transformation for speed accuracy.
 
-Machine learning–based monitoring and analysis
+◪ 4. Driver Behavior & Mental State Monitoring
+Research Focus: Human-factor risk reduction.
 
-Instant digital enforcement alerts
+Core Assets: Drowsiness/Emotion detection and context-aware audio interventions.
 
-Behavioral change measurement and prediction
+◫ 5. Accident Response & Statistical Forecasting
+Research Focus: Bridging reactive handling with proactive planning.
 
-▣ The Core Research Gap We Address
-Existing Systems	Our Approach
-Vehicle-only identification	Driver–vehicle linkage
-Delayed enforcement	Instant digital feedback
-Punishment-focused	Behavior-aware correction
-Reactive operations	Predictive planning
-⌬ Research Architecture (Component View)
+Core Assets: AI-based injury assessment and short-term risk forecasting models.
 
-This project is structured as five tightly integrated research pillars, each addressing a distinct scientific gap.
+⟳ End-to-End System Operation
+Capture: RFID gantries record the Driver + Vehicle pair.
 
-◧ Dashboard & Driver Alert System (Member 1)
+Monitor: In-cabin and roadside AI track behavior and speed.
 
-Research Question:
-Does real-time digital feedback reduce repeat speed violations?
+Calculate: Segment-based algorithms compute precise speed.
 
-What it contributes:
+Enforce: Instant SMS/Email alerts are triggered for violations.
 
-Live violation stream via WebSockets
+Analyze: The system logs patterns to measure long-term compliance.
 
-Secure authority dashboard
-
-Instant SMS/Email alerts
-
-Before vs After behavior analysis
-
-Quantifiable compliance metrics
-
-◨ IoT & RFID Identity Infrastructure (Member 5)
-
-ESP32 + RC522 gantry system
-
-Dual RFID scan (Driver License + License Plate)
-
-Reliable identity verification under rain and fog
-
-◩ ML Speed & Vehicle Analysis (Member 2)
-
-YOLOv8 vehicle classification
-
-Perspective transformation for speed validation
-
-Visual + RFID cross-verification
-
-◪ Driver Behavior & Mental State Monitoring (Member 4)
-
-Drowsiness and emotion detection
-
-Context-aware audio intervention
-
-Human-factor risk reduction
-
-◫ Intelligent Accident Response & Statistical Forecasting (Member 3)
-
-Crash detection via sensors
-
-Injury severity assessment
-
-Short-term risk forecasting
-
-Emergency resource prioritization
-
-⟳ System Operation (End-to-End)
-
-Identity Capture – RFID gantries record driver + vehicle
-
-Continuous Monitoring – In-cabin and roadside AI operate
-
-Violation Calculation – Segment-based speed computation
-
-Instant Enforcement – Alerts issued in real time
-
-Research Feedback Loop – Behavior patterns analyzed
-
-✦ What Makes This System Distinct
-
-Driver-centric enforcement logic
-
-Immediate behavioral intervention
-
-Weather-resilient identification
-
-Research-driven evaluation loop
-
-Scalable national design
-
+🛠️ Technology Snapshot
 ⊕ Expected Research Outcomes
+📉 Reduction in repeat speeding offenses.
 
-Reduced repeat speeding behavior
+🧠 Improved driver awareness through instant nudges.
 
-Improved driver awareness
+🚑 Faster emergency response via automated detection.
 
-Faster emergency response
+📝 Evidence-backed insights for Sri Lankan traffic policy.
 
-Predictive risk identification
-
-Evidence-backed enforcement policies
-
-⚙ Technology Snapshot
-
-Hardware
-ESP32 · RC522 · Accelerometers
-
-Machine Learning
-YOLOv8 · PyTorch · Scikit-learn · Statsmodels
-
-Backend
-FastAPI · MongoDB · WebSockets
-
-Frontend
-React · Tailwind CSS · Lucide Icons
-
-◎ Research Team
-
-Member 1 – Dashboard & Behavioral Impact Analysis
-
-Member 2 – ML Speed & Vehicle Recognition
-
-Member 3 – Accident Response & Statistical Forecasting
-
-Member 4 – Driver Behavior & Mental State Monitoring
-
-Member 5 – IoT & RFID Infrastructure
-
-◌ Final Note
-
-This repository represents a research-driven system, not just an application.
-Its value lies in measuring behavioral change, improving safety outcomes, and supporting real-time decision-making.
+Final Note: This is not just an application; it is a research-driven system designed to measure and influence human behavior for a safer future.
