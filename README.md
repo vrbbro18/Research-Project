@@ -4,8 +4,11 @@
 
 📋 1. Project Overview
 Project ID: 25-26J-314
+
 Degree: BSc (Hons) in Information Technology
+
 Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
+
 Core Goal: To transform highway enforcement into a proactive, real-time ecosystem that focuses on changing driver behavior through instant digital intervention.
 
 ---
@@ -14,11 +17,11 @@ Core Goal: To transform highway enforcement into a proactive, real-time ecosyste
 🎯 2. The Research Problem & Gap
 In the current Sri Lankan context, speeding enforcement suffers from:
 
-Delayed Enforcement: Fines arrive weeks later, losing the opportunity for behavioral correction.
+🔺Delayed Enforcement: Fines arrive weeks later, losing the opportunity for behavioral correction.
 
-Vehicle Centricity: Systems identify vehicle plates but lack a direct link to the driver in real-time.
+🔺Vehicle Centricity: Systems identify vehicle plates but lack a direct link to the driver in real-time.
 
-Reactive Operations: Existing infrastructure only responds after an incident or violation has occurred.
+🔺Reactive Operations: Existing infrastructure only responds after an incident or violation has occurred.
 
 ---
 
