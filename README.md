@@ -3,7 +3,6 @@
 “From Delayed Fines to Real-Time Behavioral Correction”
 
 📋 1. Project Overview
-
 Project ID: 25-26J-314
 Degree: BSc (Hons) in Information Technology
 Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
