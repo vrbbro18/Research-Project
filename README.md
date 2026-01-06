@@ -2,7 +2,8 @@
 
 “From Delayed Fines to Real-Time Behavioral Correction”
 
-📋 1. Project Overview
+📋** 1.Project Overview
+**
 Project ID: 25-26J-314
 
 Degree: BSc (Hons) in Information Technology
@@ -14,7 +15,7 @@ Core Goal: To transform highway enforcement into a proactive, real-time ecosyste
 ---
 
 
-🎯 2. The Research Problem & Gap
+🎯 **2.The Research Problem & Gap**
 In the current Sri Lankan context, speeding enforcement suffers from:
 
 🔺Delayed Enforcement: Fines arrive weeks later, losing the opportunity for behavioral correction.
@@ -25,19 +26,20 @@ In the current Sri Lankan context, speeding enforcement suffers from:
 
 ---
 
-⌬ 3. Research Architecture (Integrated Pillars)
+⌬** 3. Research Architecture (Integrated Pillars)**
 This system is built upon five distinct research pillars, each addressing a specific scientific challenge:
 
-Pillar 1: Dashboard & Driver Alert System (Individual Component)
-Research Question: Does real-time digital feedback reduce repeat speed violations?
+➡️Pillar 1: Dashboard & Driver Alert System
+          
+     🔷Research Question: Does real-time digital feedback reduce repeat speed violations?
 
-Key Contributions: * Secure Authority Dashboard: Role-based access for monitoring live violation streams.
+     🔷Key Contributions: * Secure Authority Dashboard: Role-based access for monitoring live violation streams.
 
-Instant Alert Engine: Automated SMS/Email notifications to drivers.
+     🔷Instant Alert Engine: Automated SMS/Email notifications to drivers.
 
-Behavioral Analysis: Quantifiable measurement of compliance before and after receiving alerts.
+     🔷Behavioral Analysis: Quantifiable measurement of compliance before and after receiving alerts.
 
-Pillar 2: IoT & RFID Identity Infrastructure
+➡️Pillar 2: IoT & RFID Identity Infrastructure
 Objective: Reliable identity verification (Driver + Vehicle) using a dual RFID gantry system designed to operate under adverse weather conditions like rain and fog.
 
 Pillar 3: ML Speed & Vehicle Analysis
