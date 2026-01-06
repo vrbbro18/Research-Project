@@ -1,76 +1,70 @@
 🛣️ Smart Highway Speed Violation Prediction & Management System
 “From Delayed Fines to Real-Time Behavioral Correction”
-📋 Project Metadata
-🆔 Project ID: 25-26J-314
+📋 1. Project Overview
+Project ID: 25-26J-314
 
-🎓 Degree: BSc (Hons) in Information Technology
+Degree: BSc (Hons) in Information Technology
 
-🏛️ Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
+Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
 
-◈ Why This Project Exists
-“On Sri Lankan expressways, speed violations are detected late, reported later, and corrected never.”
+Core Goal: To transform highway enforcement into a proactive, real-time ecosystem that focuses on changing driver behavior through instant digital intervention.
 
-Current systems focus on vehicles, not drivers. Fines arrive weeks later, missing the window for behavior correction. This project answers a critical research question: Can instant feedback measurably change driver behavior?
+🎯 2. The Research Problem & Gap
+In the current Sri Lankan context, speeding enforcement suffers from:
 
-◉ The Solution: A Real-Time Safety Ecosystem
-We transform highway enforcement by combining four cutting-edge domains:
+Delayed Enforcement: Fines arrive weeks later, losing the opportunity for behavioral correction.
 
-🆔 RFID Infrastructure: Linking Driver + Vehicle identities.
+Vehicle Centricity: Systems identify vehicle plates but lack a direct link to the driver in real-time.
 
-🤖 Machine Learning: Real-time monitoring and speed validation.
+Reactive Operations: Existing infrastructure only responds after an incident or violation has occurred.
 
-📲 Instant Alerts: Digital enforcement delivered in seconds.
+⌬ 3. Research Architecture (Integrated Pillars)
+This system is built upon five distinct research pillars, each addressing a specific scientific challenge:
 
-📊 Behavioral Analytics: Measuring the "Before vs. After" impact.
+Pillar 1: Dashboard & Driver Alert System (Individual Component)
+Research Question: Does real-time digital feedback reduce repeat speed violations?
 
-▣ The Core Research Gap
-⌬ Research Architecture: Five Pillars
-This project is structured as five integrated research pillars, each addressing a distinct scientific gap.
+Key Contributions: * Secure Authority Dashboard: Role-based access for monitoring live violation streams.
 
-◧ 1. Dashboard & Driver Alert System (Your Component)
-Research Focus: Does real-time feedback reduce repeat violations?
+Instant Alert Engine: Automated SMS/Email notifications to drivers.
 
-Core Assets: Live WebSockets stream, Secure Authority Dashboard, and Behavioral Impact Analysis.
+Behavioral Analysis: Quantifiable measurement of compliance before and after receiving alerts.
 
-◨ 2. IoT & RFID Identity Infrastructure
-Research Focus: Reliable identity verification under environmental stress.
+Pillar 2: IoT & RFID Identity Infrastructure
+Objective: Reliable identity verification (Driver + Vehicle) using a dual RFID gantry system designed to operate under adverse weather conditions like rain and fog.
 
-Core Assets: ESP32 + RC522 Gantry system for Dual RFID scanning (License + Plate).
+Pillar 3: ML Speed & Vehicle Analysis
+Objective: Utilizing YOLOv8 for vehicle classification and perspective transformation for high-accuracy speed validation.
 
-◩ 3. ML Speed & Vehicle Analysis
-Research Focus: Cross-verification of speed via visual and RFID data.
+Pillar 4: Driver Behavior & Mental State Monitoring
+Objective: Addressing human-factor risks through real-time drowsiness and emotion detection with context-aware audio interventions.
 
-Core Assets: YOLOv8 classification and Perspective Transformation for speed accuracy.
+Pillar 5: Intelligent Accident Response & Statistical Forecasting
+Objective: AI-based accident detection and statistical models to forecast high-risk zones for preventive resource deployment.
 
-◪ 4. Driver Behavior & Mental State Monitoring
-Research Focus: Human-factor risk reduction.
+⚙️ 4. Technical Implementation & Progress
+For the current PP1 (Progress Presentation 1), the system logic has been validated through:
 
-Core Assets: Drowsiness/Emotion detection and context-aware audio interventions.
+Secure Web Architecture: Implementation of Role-Based Access Control (RBAC) to ensure data privacy for sensitive driver information.
 
-◫ 5. Accident Response & Statistical Forecasting
-Research Focus: Bridging reactive handling with proactive planning.
+Real-Time Visualization: Development of dynamic charts, heatmaps, and violation logs that process incoming data.
 
-Core Assets: AI-based injury assessment and short-term risk forecasting models.
+System Validation: Use of Simulated Data Ingestion to verify the analytics engine and alert triggering logic before final hardware integration.
 
-⟳ End-to-End System Operation
-Capture: RFID gantries record the Driver + Vehicle pair.
+🚀 5. Expected Research Outcomes
+📉 Behavioral Change: A measurable reduction in repeat overspeeding offenses per driver.
 
-Monitor: In-cabin and roadside AI track behavior and speed.
+🚨 Improved Awareness: Instant driver awareness through real-time feedback loops.
 
-Calculate: Segment-based algorithms compute precise speed.
+🚑 Enhanced Response: Faster emergency reaction times and proactive patrol deployment.
 
-Enforce: Instant SMS/Email alerts are triggered for violations.
+📑 Policy Insight: Evidence-backed data for future national traffic enforcement strategies.
 
-Analyze: The system logs patterns to measure long-term compliance.
+📦 6. Technology Snapshot
+Frontend: React, Tailwind CSS, Lucide Icons
 
-🛠️ Technology Snapshot
-⊕ Expected Research Outcomes
-📉 Reduction in repeat speeding offenses.
+Backend: FastAPI, MongoDB, WebSockets
 
-🧠 Improved driver awareness through instant nudges.
+Hardware: ESP32, RC522 RFID Modules
 
-🚑 Faster emergency response via automated detection.
-
-📝 Evidence-backed insights for Sri Lankan traffic policy.
-
-Final Note: This is not just an application; it is a research-driven system designed to measure and influence human behavior for a safer future.
+AI/ML: YOLOv8, PyTorch, Statsmodels
