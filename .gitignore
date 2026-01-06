@@ -9,3 +9,6 @@ npm-debug.log*
 build/
 dist/
 
+# WhatsApp Web authentication
+.wwebjs_auth/
+
