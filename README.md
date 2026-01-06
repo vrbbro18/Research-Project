@@ -4,13 +4,13 @@
 
 📋**1.Project Overview**
 
-Project ID: 25-26J-314
+    Project ID: 25-26J-314
 
-Degree: BSc (Hons) in Information Technology
+    Degree: BSc (Hons) in Information Technology
 
-Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
+    Faculty: Computing | Sri Lanka Institute of Information Technology (SLIIT)
 
-Core Goal: To transform highway enforcement into a proactive, real-time ecosystem that focuses on changing driver behavior through instant digital intervention.
+    Core Goal: To transform highway enforcement into a proactive, real-time ecosystem that focuses on changing driver behavior through instant digital intervention.
 
 ---
 
