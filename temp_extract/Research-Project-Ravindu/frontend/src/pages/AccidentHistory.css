@@ -1,0 +1,387 @@
+/**
+ * Accident History Page Styles
+ */
+
+.accident-history {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.page-header h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  color: #6b7280;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+/* Statistics Cards */
+.stats-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-top: 4px solid #667eea;
+}
+
+.stat-card.low {
+  border-top-color: #28a745;
+}
+
+.stat-card.medium {
+  border-top-color: #ffc107;
+}
+
+.stat-card.high {
+  border-top-color: #dc3545;
+}
+
+.stat-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  color: #666;
+  font-weight: 500;
+}
+
+/* Filter Buttons */
+.filter-container {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.filter-button {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #e0e0e0;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s;
+  color: #333;
+}
+
+.filter-button:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.filter-button.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: transparent;
+}
+
+/* Error and Loading */
+.error-message {
+  background: #fee;
+  border: 2px solid #fcc;
+  border-radius: 4px;
+  padding: 1.5rem;
+  text-align: center;
+  color: #c33;
+  margin-bottom: 2rem;
+}
+
+.retry-button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #c33;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.retry-button:hover {
+  background: #a22;
+}
+
+.loading-container {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.loading-container .spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* History Container */
+.history-container {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e5e7eb;
+  overflow-x: auto;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #666;
+}
+
+.clear-filter-button {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Table Styles */
+.accidents-table {
+  overflow-x: auto;
+}
+
+.accidents-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+.accidents-table thead {
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+}
+
+.accidents-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.accidents-table tbody tr {
+  border-bottom: 1px solid #e9ecef;
+  transition: all 0.2s;
+}
+
+.accidents-table tbody tr:hover {
+  background-color: #f8f9fa;
+  transform: translateX(2px);
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.05);
+}
+
+.accidents-table tbody tr.high-risk-row {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, transparent 100%);
+  border-left: 4px solid #ef4444;
+}
+
+.accidents-table tbody tr.high-risk-row:hover {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, transparent 100%);
+  box-shadow: -4px 0 8px rgba(239, 68, 68, 0.15);
+}
+
+.accidents-table td {
+  padding: 1rem;
+  color: #333;
+}
+
+.accident-id-cell {
+  font-family: monospace;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.vehicle-no-cell {
+  font-size: 1.05rem;
+}
+
+.gps-cell {
+  font-size: 0.9rem;
+}
+
+.gps-coordinates {
+  font-family: monospace;
+  color: #333;
+  margin-bottom: 0.25rem;
+}
+
+.gps-address {
+  font-size: 0.85rem;
+  color: #666;
+  font-style: italic;
+}
+
+.alert-cell {
+  text-align: center;
+}
+
+.alert-badge {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.alert-badge.sent {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+  font-weight: 600;
+}
+
+.alert-badge.not-sent {
+  background-color: #f8f9fa;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+}
+
+.timestamp-cell {
+  font-size: 0.9rem;
+  color: #666;
+  white-space: nowrap;
+}
+
+/* Risk Badge (same as Simulation page) */
+.risk-badge {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.risk-badge.low {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.risk-badge.medium {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.risk-badge.high {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  font-weight: 700;
+  animation: pulse-high 2s infinite;
+}
+
+@keyframes pulse-high {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+  }
+  50% {
+    box-shadow: 0 2px 12px rgba(239, 68, 68, 0.5);
+  }
+}
+
+/* Actions */
+.actions-container {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.refresh-button {
+  padding: 0.75rem 1.5rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: background-color 0.3s;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #5568d3;
+}
+
+.refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .stats-container {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .stats-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .filter-container {
+    flex-direction: column;
+  }
+  
+  .filter-button {
+    width: 100%;
+  }
+  
+  .history-container {
+    padding: 1rem;
+  }
+  
+  .accidents-table {
+    font-size: 0.85rem;
+  }
+  
+  .accidents-table th,
+  .accidents-table td {
+    padding: 0.75rem 0.5rem;
+  }
+}
+

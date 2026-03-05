@@ -1,0 +1,126 @@
+/**
+ * Navbar Styles
+ * Professional top navigation bar
+ */
+
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 280px;
+  right: 0;
+  height: 70px;
+  background: linear-gradient(135deg, #1e2749 0%, #2a3a5f 100%);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+  z-index: 999;
+  border-bottom: 1px solid #3a4a6f;
+}
+
+.navbar-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 100%;
+  padding: 0 2rem;
+  max-width: 100%;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.menu-toggle {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+}
+
+.menu-toggle span {
+  width: 24px;
+  height: 3px;
+  background: #e0e0e0;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.navbar-title h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #4a9eff 0%, #6bb6ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.5px;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.navbar-info {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.time-display,
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid #3a4a6f;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #e0e0e0;
+  font-weight: 500;
+}
+
+.time-icon,
+.user-icon {
+  font-size: 1rem;
+}
+
+.time-text,
+.user-text {
+  font-family: 'Monaco', 'Courier New', monospace;
+  letter-spacing: 0.5px;
+}
+
+.user-badge {
+  background: linear-gradient(135deg, #4a9eff 0%, #6bb6ff 100%);
+  color: white;
+  border: none;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .navbar {
+    left: 0;
+  }
+
+  .menu-toggle {
+    display: flex;
+  }
+
+  .navbar-title h1 {
+    font-size: 1.2rem;
+  }
+
+  .navbar-container {
+    padding: 0 1rem;
+  }
+
+  .time-display {
+    display: none;
+  }
+}
+

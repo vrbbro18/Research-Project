@@ -1,0 +1,30 @@
+/**
+ * App Component Styles
+ * Dark Police/Army Theme Dashboard
+ */
+
+.App {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+  display: flex;
+}
+
+/* Main Content */
+.main-content {
+  flex: 1;
+  margin-left: 280px;
+  margin-top: 70px;
+  padding: 0;
+  min-height: calc(100vh - 70px);
+  background: transparent;
+  overflow-x: hidden;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 0;
+  }
+}
+

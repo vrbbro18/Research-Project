@@ -1,0 +1,16 @@
+# AI-Based Driver Risk Detection - Python Dependencies
+# Research Prototype Requirements
+
+# Deep Learning Framework
+tensorflow>=2.13.0,<3.0.0
+
+# Image Processing
+Pillow>=10.0.0
+
+# Web Framework (for API server)
+Flask>=2.3.0
+flask-cors>=4.0.0
+
+# Scientific Computing
+numpy>=1.24.0
+
