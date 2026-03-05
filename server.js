@@ -2,6 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+
+// Connect to MongoDB
+const mongoURI = process.env.MONGO_URI || 'mongodb+srv://iotuser:Iot12345@cluster0.r5gxqyg.mongodb.net/rfidDB';
+mongoose.connect(mongoURI)
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -11,6 +18,9 @@ const chartsRoutes = require('./routes/charts');
 const speedRoutes = require('./routes/speed');
 const driverRoutes = require('./routes/driver');
 const alertRoutes = require('./routes/alert');
+const scoreboardRoutes = require('./routes/scoreboard');
+const vehiclesRoutes = require('./routes/vehicles');
+const dashboardStatsRoutes = require('./routes/dashboardStats');
 
 // Initialize Express app
 const app = express();
@@ -33,6 +43,9 @@ app.use('/violations', violationsRoutes); // SUPER_ADMIN, OFFICER
 app.use('/charts', chartsRoutes);      // SUPER_ADMIN, OFFICER, ANALYST
 app.use('/driver', driverRoutes);      // SUPER_ADMIN, OFFICER
 app.use('/', alertRoutes);             // POST /send-alert (SUPER_ADMIN, OFFICER)
+app.use('/scoreboard', scoreboardRoutes); // SUPER_ADMIN, OFFICER, ANALYST
+app.use('/vehicles', vehiclesRoutes);  // SUPER_ADMIN, OFFICER, ANALYST
+app.use('/dashboard', dashboardStatsRoutes); // GET /dashboard/stats
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -54,4 +67,3 @@ app.listen(PORT, () => {
   console.log('  GET /driver/:vehicleNumber - SUPER_ADMIN, OFFICER (driver lookup)');
   console.log('  POST /send-alert - SUPER_ADMIN, OFFICER (full alert workflow)');
 });
-

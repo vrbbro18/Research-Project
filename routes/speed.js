@@ -1,12 +1,48 @@
 const express = require('express');
 const router = express.Router();
-const violations = require('../data/violations');
-const alertService = require('../services/alertService');
+const Violation = require('../models/Violation');
+const Driver = require('../models/Driver');
+const Vehicle = require('../models/Vehicle');
+const mobileAlertService = require('../services/mobileAlertService');
+
+// POST /speed/average - Calculate average speed from two RFID readers
+router.post('/average', async (req, res) => {
+  const { vehicleNumber, rfid1Timestamp, rfid2Timestamp, distanceMeters } = req.body;
+
+  if (!vehicleNumber || !rfid1Timestamp || !rfid2Timestamp || !distanceMeters) {
+    return res.status(400).json({
+      success: false,
+      message: 'vehicleNumber, rfid1Timestamp, rfid2Timestamp, and distanceMeters are required'
+    });
+  }
+
+  // Calculate speed: distance / time
+  const t1 = new Date(rfid1Timestamp).getTime();
+  const t2 = new Date(rfid2Timestamp).getTime();
+  const timeDiffSeconds = Math.abs(t2 - t1) / 1000;
+
+  if (timeDiffSeconds === 0) {
+    return res.status(400).json({ success: false, message: 'Invalid timestamps: time difference cannot be zero' });
+  }
+
+  // Speed in meters per second
+  const speedMps = distanceMeters / timeDiffSeconds;
+
+  // Convert to km/h
+  const speedKmh = speedMps * 3.6;
+
+  // Internal redirect to main speed processing logic
+  req.body.speed = parseFloat(speedKmh.toFixed(2));
+
+  // Continue processing as a normal speed reading
+  req.url = '/';
+  router.handle(req, res);
+});
+
 
 // POST /speed - IoT speed sensor input endpoint
-// This endpoint simulates data coming from an IoT speed sensor
-// No authentication required as it's an IoT device endpoint
-router.post('/speed', (req, res) => {
+// Processes either a direct speed reading or a forwarded average speed 
+router.post('/', async (req, res) => {
   const { vehicleNumber, speed } = req.body;
 
   // Validate input
@@ -17,7 +53,6 @@ router.post('/speed', (req, res) => {
     });
   }
 
-  // Validate speed is a number
   const speedValue = parseFloat(speed);
   if (isNaN(speedValue)) {
     return res.status(400).json({
@@ -26,75 +61,93 @@ router.post('/speed', (req, res) => {
     });
   }
 
-  // Check if speed exceeds limit (80 km/h or mph)
-  if (speedValue > 80) {
-    // Count current SPEED violations for this vehicle (before adding new one)
-    const currentSpeedViolationCount = alertService.countSpeedViolations(violations, vehicleNumber);
-    const newSpeedViolationCount = currentSpeedViolationCount + 1;
+  // Speed Classification Logic
+  let speedCategory = null;
+  if (speedValue < 100) {
+    speedCategory = 'Low';
+  } else if (speedValue >= 100 && speedValue <= 120) {
+    speedCategory = 'Medium';
+  } else if (speedValue > 120) {
+    speedCategory = 'High';
+  }
 
-    // Calculate current total violation count for this vehicle
-    const currentTotalViolationCount = alertService.getCurrentViolationCount(violations, vehicleNumber);
-    const newTotalViolationCount = currentTotalViolationCount + 1;
+  try {
+    // Only record as violation if Medium or High (Speed > 100)
+    if (speedCategory === 'Medium' || speedCategory === 'High') {
 
-    // Create new speed violation record
-    const newViolation = {
-      id: violations.length > 0 ? Math.max(...violations.map(v => v.id)) + 1 : 1,
-      vehicleNumber: vehicleNumber,
-      violationType: 'Speeding',
-      timestamp: new Date().toISOString(),
-      violationCount: newTotalViolationCount,
-      speed: speedValue  // Store the speed that triggered the violation
-    };
-
-    // Add violation to the array (in a real app, this would be saved to database)
-    violations.push(newViolation);
-
-    // Use alert service to calculate alert status based on SPEED violations only
-    const speedAlertStatus = alertService.getSpeedAlertStatus(violations, vehicleNumber);
-
-    // Return violation status
-    return res.json({
-      success: true,
-      violationDetected: true,
-      message: `Speed violation detected: ${speedValue} exceeds limit of 80`,
-      violation: {
-        id: newViolation.id,
+      const newViolation = new Violation({
         vehicleNumber: vehicleNumber,
         violationType: 'Speeding',
         speed: speedValue,
-        timestamp: newViolation.timestamp,
-        violationCount: newTotalViolationCount,
-        alertLevel: speedAlertStatus.alertLevel
-      },
-      status: {
-        vehicleNumber: vehicleNumber,
-        speedViolationCount: newSpeedViolationCount,
-        totalViolationCount: newTotalViolationCount,
-        alertLevel: speedAlertStatus.alertLevel,
-        message: speedAlertStatus.message
-      }
-    });
-  } else {
-    // Speed is within limit - no violation
-    // Still return current SPEED violation alert status for the vehicle
-    const speedAlertStatus = alertService.getSpeedAlertStatus(violations, vehicleNumber);
-    const currentTotalViolationCount = alertService.getCurrentViolationCount(violations, vehicleNumber);
+        speedCategory: speedCategory,
+        timestamp: new Date()
+      });
 
-    return res.json({
-      success: true,
-      violationDetected: false,
-      message: `Speed ${speedValue} is within limit`,
-      status: {
-        vehicleNumber: vehicleNumber,
-        speed: speedValue,
-        speedViolationCount: alertService.countSpeedViolations(violations, vehicleNumber),
-        totalViolationCount: currentTotalViolationCount,
-        alertLevel: speedAlertStatus.alertLevel,
-        message: speedAlertStatus.message
+      // Special handling for High speed - decrease driver rating and send alert
+      let alertDetails = null;
+      let driverFound = false;
+
+      if (speedCategory === 'High') {
+        const vehicle = await Vehicle.findOne({ vehicleNumber });
+        if (vehicle) {
+          const driver = await Driver.findOne({ driverId: vehicle.driverId });
+          if (driver) {
+            driverFound = true;
+            // Deduct rating penalty for high speed
+            driver.rating = Math.max(0, driver.rating - 15);
+            await driver.save();
+
+            // Fire mobile notification
+            alertDetails = await mobileAlertService.sendHighSpeedAlert(driver, vehicleNumber, speedValue);
+            newViolation.alertSent = alertDetails.success;
+          }
+        }
+      } else if (speedCategory === 'Medium') {
+        // Deduct minor penalty for medium speed
+        const vehicle = await Vehicle.findOne({ vehicleNumber });
+        if (vehicle) {
+          const driver = await Driver.findOne({ driverId: vehicle.driverId });
+          if (driver) {
+            driver.rating = Math.max(0, driver.rating - 5);
+            await driver.save();
+          }
+        }
       }
-    });
+
+      await newViolation.save();
+
+      return res.json({
+        success: true,
+        violationDetected: true,
+        message: `Speed violation detected: ${speedValue} km/h is considered ${speedCategory}`,
+        violation: {
+          id: newViolation._id,
+          vehicleNumber: vehicleNumber,
+          violationType: 'Speeding',
+          speed: speedValue,
+          speedCategory: speedCategory,
+          timestamp: newViolation.timestamp,
+        },
+        alertSent: newViolation.alertSent,
+        driverFound
+      });
+    } else {
+      // Speed is Low (< 100) - no violation
+      return res.json({
+        success: true,
+        violationDetected: false,
+        message: `Speed ${speedValue} km/h is within safe limits (Low)`,
+        status: {
+          vehicleNumber: vehicleNumber,
+          speed: speedValue,
+          speedCategory: speedCategory
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error processing speed data', error);
+    res.status(500).json({ success: false, message: 'Server error processing speed sensor data' });
   }
 });
 
 module.exports = router;
-

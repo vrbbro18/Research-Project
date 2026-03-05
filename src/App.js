@@ -5,78 +5,50 @@ import Dashboard from './pages/Dashboard';
 import Violations from './pages/Violations';
 import Charts from './pages/Charts';
 import Admin from './pages/Admin';
+import DriverScoring from './pages/DriverScoring';
+import VehicleTracking from './pages/VehicleTracking';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
   const [userRole, setUserRole] = useState(null);
+  const [username, setUsername] = useState(null);
 
   useEffect(() => {
-    // Load user role from localStorage on mount
     const storedRole = localStorage.getItem('userRole');
-    if (storedRole) {
-      setUserRole(storedRole);
-    }
+    const storedUser = localStorage.getItem('username');
+    if (storedRole) { setUserRole(storedRole); setUsername(storedUser); }
   }, []);
 
-  const handleLogin = (role) => {
+  const handleLogin = (role, user) => {
     setUserRole(role);
+    setUsername(user);
     localStorage.setItem('userRole', role);
+    localStorage.setItem('username', user || role);
   };
 
   const handleLogout = () => {
     setUserRole(null);
+    setUsername(null);
     localStorage.removeItem('userRole');
+    localStorage.removeItem('username');
   };
+
+  const defaultRedirect = userRole === 'ANALYST' ? '/charts' : '/dashboard';
+
+  const protect = (element, roles) => (
+    <ProtectedRoute userRole={userRole} allowedRoles={roles}>{element}</ProtectedRoute>
+  );
 
   return (
     <Router>
       <Routes>
-        <Route
-          path="/login"
-          element={
-            userRole ? (
-              userRole === 'ANALYST' ? (
-                <Navigate to="/charts" replace />
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
-            ) : (
-              <Login onLogin={handleLogin} />
-            )
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute userRole={userRole} allowedRoles={['SUPER_ADMIN', 'OFFICER']}>
-              <Dashboard userRole={userRole} onLogout={handleLogout} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/violations"
-          element={
-            <ProtectedRoute userRole={userRole} allowedRoles={['SUPER_ADMIN', 'OFFICER']}>
-              <Violations userRole={userRole} onLogout={handleLogout} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/charts"
-          element={
-            <ProtectedRoute userRole={userRole} allowedRoles={['SUPER_ADMIN', 'OFFICER', 'ANALYST']}>
-              <Charts userRole={userRole} onLogout={handleLogout} />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <ProtectedRoute userRole={userRole} allowedRoles={['SUPER_ADMIN']}>
-              <Admin userRole={userRole} onLogout={handleLogout} />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/login" element={userRole ? <Navigate to={defaultRedirect} replace /> : <Login onLogin={handleLogin} />} />
+        <Route path="/dashboard"  element={protect(<Dashboard     userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN', 'OFFICER'])} />
+        <Route path="/violations" element={protect(<Violations    userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN', 'OFFICER'])} />
+        <Route path="/charts"     element={protect(<Charts        userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN', 'OFFICER', 'ANALYST'])} />
+        <Route path="/admin"      element={protect(<Admin         userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN'])} />
+        <Route path="/scoreboard" element={protect(<DriverScoring userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN', 'OFFICER', 'ANALYST'])} />
+        <Route path="/vehicles"   element={protect(<VehicleTracking userRole={userRole} onLogout={handleLogout} />, ['SUPER_ADMIN', 'OFFICER', 'ANALYST'])} />
         <Route path="/" element={<Navigate to="/login" replace />} />
       </Routes>
     </Router>
@@ -84,4 +56,3 @@ function App() {
 }
 
 export default App;
-

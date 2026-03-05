@@ -1,810 +1,375 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { getViolations } from '../services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import Layout from '../components/Layout';
+import { getDashboardStats } from '../services/api';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
+  Chart as ChartJS, CategoryScale, LinearScale, BarElement,
+  PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
+ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
+
+// ─── Reusable StatCard ──────────────────────────────────────────────────────
+const StatCard = ({ label, value, sub, color, glow, icon, pulse }) => (
+  <div style={{
+    background: `linear-gradient(135deg, ${color}18 0%, ${color}08 100%)`,
+    border: `1px solid ${color}35`,
+    borderRadius: '16px', padding: '20px 22px',
+    boxShadow: `0 4px 24px ${glow || color + '10'}`,
+    position: 'relative', overflow: 'hidden',
+  }}>
+    {pulse && (
+      <div style={{
+        position: 'absolute', top: '14px', right: '14px',
+        width: '10px', height: '10px', borderRadius: '50%',
+        background: color, animation: 'pulse 1.8s ease-in-out infinite',
+        boxShadow: `0 0 12px ${color}`,
+      }} />
+    )}
+    <div style={{ fontSize: '22px', marginBottom: '10px' }}>{icon}</div>
+    <div style={{ fontSize: '11px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '8px' }}>{label}</div>
+    <div style={{ fontSize: '34px', fontWeight: '900', color, lineHeight: 1, textShadow: `0 0 20px ${color}60`, marginBottom: '6px' }}>{value}</div>
+    {sub && <div style={{ fontSize: '12px', color: '#64748b', fontWeight: '500' }}>{sub}</div>}
+  </div>
 );
 
+// ─── Speed Badge ─────────────────────────────────────────────────────────────
+const SpeedBadge = ({ cat, speed }) => {
+  const cfg = cat === 'High'
+    ? { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.4)', label: '⚡ HIGH' }
+    : { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', label: '◈ MED' };
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 10px', background: cfg.bg, border: `1px solid ${cfg.border}`, borderRadius: '20px', color: cfg.color, fontSize: '11px', fontWeight: '800', letterSpacing: '0.5px' }}>
+      {cfg.label} {speed && <span style={{ opacity: 0.8 }}>{speed}km/h</span>}
+    </span>
+  );
+};
+
+// ─── Hourly Heatmap ──────────────────────────────────────────────────────────
+const HourlyHeatmap = ({ data }) => {
+  if (!data || data.length === 0) return null;
+  const max = Math.max(...data, 1);
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(24, 1fr)', gap: '3px' }}>
+        {data.map((count, h) => {
+          const intensity = count / max;
+          const color = intensity > 0.7 ? '#ef4444' : intensity > 0.4 ? '#f97316' : intensity > 0.15 ? '#f59e0b' : '#1e293b';
+          return (
+            <div key={h} title={`${h}:00 — ${count} events`} style={{
+              height: '28px', borderRadius: '4px', background: color,
+              opacity: intensity > 0 ? 0.3 + intensity * 0.7 : 0.15,
+              cursor: 'pointer', transition: 'transform 0.15s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'scaleY(1.3)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scaleY(1)'}
+            />
+          );
+        })}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+        {[0, 6, 12, 18, 23].map(h => (
+          <span key={h} style={{ fontSize: '10px', color: '#475569' }}>{h}:00</span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
 const Dashboard = ({ userRole, onLogout }) => {
-  const location = useLocation();
-  const [violations, setViolations] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  useEffect(() => {
-    fetchViolations();
-  }, []);
-
-  const fetchViolations = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await getViolations(userRole);
-      if (response.success) {
-        setViolations(response.violations);
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to load violations');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await getDashboardStats(userRole);
+      if (res.success) { setStats(res.stats); setLastRefresh(new Date()); }
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }, [userRole]);
 
-  // Calculate summary statistics
-  const calculateSummary = () => {
-    const total = violations.length;
-    const warnings = violations.filter(v => v.alertLevel === 'WARNING').length;
-    const criticals = violations.filter(v => v.alertLevel === 'CRITICAL').length;
-    const normal = violations.filter(v => v.alertLevel === 'NORMAL').length;
-    const avgViolationCount = violations.length > 0
-      ? (violations.reduce((sum, v) => sum + v.violationCount, 0) / violations.length).toFixed(1)
-      : 0;
-    return { total, warnings, criticals, normal, avgViolationCount };
-  };
+  useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Process data for charts
-  const processTypeDistribution = () => {
-    const typeCounts = {};
-    violations.forEach((v) => {
-      typeCounts[v.violationType] = (typeCounts[v.violationType] || 0) + 1;
-    });
-    return {
-      labels: Object.keys(typeCounts),
-      data: Object.values(typeCounts)
-    };
-  };
-
-  const processTimeSeries = () => {
-    const sorted = [...violations].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    const timeGroups = {};
-    sorted.forEach((v) => {
-      const date = new Date(v.timestamp);
-      const hour = date.getHours();
-      const key = `${hour.toString().padStart(2, '0')}:00`;
-      timeGroups[key] = (timeGroups[key] || 0) + 1;
-    });
-    return {
-      labels: Object.keys(timeGroups).sort(),
-      data: Object.keys(timeGroups).sort().map(k => timeGroups[k])
-    };
-  };
-
-  const processAlertDistribution = () => {
-    const summary = calculateSummary();
-    return {
-      labels: ['Normal', 'Warning', 'Critical'],
-      data: [summary.normal, summary.warnings, summary.criticals],
-      colors: [
-        'rgba(40, 167, 69, 0.8)',
-        'rgba(255, 193, 7, 0.8)',
-        'rgba(220, 53, 69, 0.8)'
-      ]
-    };
-  };
-
-  const summary = calculateSummary();
-  const typeData = processTypeDistribution();
-  const timeData = processTimeSeries();
-  const alertData = processAlertDistribution();
-
-  // Chart configurations
-  const typeChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
+  const darkChart = {
     plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 12,
-        titleFont: { size: 14, weight: 'bold' },
-        bodyFont: { size: 13 }
-      }
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+      tooltip: { backgroundColor: 'rgba(10,14,26,0.95)', titleColor: '#f1f5f9', bodyColor: '#94a3b8', padding: 12, borderColor: 'rgba(56,189,248,0.2)', borderWidth: 1 },
     },
     scales: {
-      y: {
-        beginAtZero: true,
-        grid: { color: 'rgba(0, 0, 0, 0.05)' },
-        ticks: { stepSize: 1, font: { size: 11 } }
-      },
-      x: {
-        grid: { display: false },
-        ticks: { font: { size: 11 } }
-      }
-    }
-  };
-
-  const timeChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 12
-      }
+      x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.03)' } },
+      y: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true },
     },
-    scales: {
-      y: {
-        beginAtZero: true,
-        grid: { color: 'rgba(0, 0, 0, 0.05)' },
-        ticks: { stepSize: 1, font: { size: 11 } }
-      },
-      x: {
-        grid: { display: false },
-        ticks: { font: { size: 11 } }
-      }
-    }
+    responsive: true, maintainAspectRatio: false,
   };
 
-  const alertChartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'bottom',
-        labels: { padding: 15, font: { size: 12 } }
-      },
-      tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        padding: 12
-      }
-    }
+  const s = {
+    page: { minHeight: '100vh', background: 'linear-gradient(135deg, #060a14 0%, #0a0f1e 100%)', padding: '28px', color: '#e2e8f0', fontFamily: "'Inter','Segoe UI',sans-serif" },
+    sectionTitle: { fontSize: '12px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' },
+    card: { background: 'rgba(10,14,26,0.7)', border: '1px solid rgba(56,189,248,0.1)', borderRadius: '16px', padding: '22px', backdropFilter: 'blur(10px)' },
   };
-
-  const getAvailablePages = () => {
-    const pages = [];
-    pages.push({ path: '/dashboard', name: 'Dashboard', icon: '🏠' });
-    if (userRole === 'SUPER_ADMIN') {
-      pages.push({ path: '/admin', name: 'Admin Settings', icon: '⚙️' });
-    }
-    pages.push({ path: '/violations', name: 'Violations', icon: '📋' });
-    pages.push({ path: '/charts', name: 'Analytics', icon: '📊' });
-    return pages;
-  };
-
-  const menuItems = getAvailablePages();
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%)',
-      padding: '0',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      {/* Animated Background Pattern */}
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundImage: `
-          repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(59, 130, 246, 0.02) 35px, rgba(59, 130, 246, 0.02) 70px)
-        `,
-        pointerEvents: 'none'
-      }}></div>
-
-      {/* Header */}
-      <div style={{
-        background: 'linear-gradient(135deg, rgba(26, 31, 58, 0.95) 0%, rgba(15, 20, 25, 0.95) 100%)',
-        borderBottom: '1px solid rgba(59, 130, 246, 0.2)',
-        padding: '24px 30px',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-        backdropFilter: 'blur(10px)',
-        position: 'relative',
-        zIndex: 10
-      }}>
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          maxWidth: '1400px',
-          margin: '0 auto'
-        }}>
+    <Layout userRole={userRole} onLogout={onLogout}>
+      <div style={s.page}>
+        {/* ── Top Bar ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '28px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h1 style={{
-              margin: 0,
-              fontSize: '28px',
-              fontWeight: '700',
-              background: 'linear-gradient(135deg, #ffffff 0%, #a0aec0 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-              letterSpacing: '-0.5px'
-            }}>
-              Traffic Violation Monitoring
+            <h1 style={{ fontSize: '26px', fontWeight: '900', background: 'linear-gradient(135deg, #f1f5f9 0%, #38bdf8 60%, #818cf8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', margin: '0 0 4px', letterSpacing: '-0.5px' }}>
+              Highway Speed Monitoring
             </h1>
-            <p style={{
-              margin: '5px 0 0 0',
-              fontSize: '14px',
-              color: '#94a3b8',
-              fontWeight: '400'
-            }}>
-              Real-time dashboard and analytics
+            <p style={{ margin: 0, fontSize: '13px', color: '#475569', fontWeight: '500' }}>
+              RFID-based real-time speed violation detection · Last updated: {lastRefresh.toLocaleTimeString()}
             </p>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <div style={{
-              padding: '10px 18px',
-              background: userRole === 'SUPER_ADMIN' 
-                ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%)'
-                : userRole === 'OFFICER'
-                ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.2) 100%)'
-                : 'linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(147, 51, 234, 0.2) 100%)',
-              border: `1px solid ${userRole === 'SUPER_ADMIN' ? 'rgba(59, 130, 246, 0.4)' : userRole === 'OFFICER' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(168, 85, 247, 0.4)'}`,
-              borderRadius: '20px',
-              fontSize: '13px',
-              fontWeight: '600',
-              color: userRole === 'SUPER_ADMIN' ? '#93c5fd' : userRole === 'OFFICER' ? '#fcd34d' : '#d8b4fe',
-              letterSpacing: '0.5px'
-            }}>
-              {userRole}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', padding: '8px 14px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981', animation: 'pulse 1.5s infinite' }} />
+              <span style={{ fontSize: '12px', color: '#10b981', fontWeight: '700' }}>SYSTEM LIVE</span>
             </div>
-            <button onClick={onLogout} style={{
-              padding: '10px 20px',
-              background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'all 0.3s ease',
-              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.boxShadow = '0 6px 16px rgba(239, 68, 68, 0.4)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
-            }}>
-              Logout
+            <button onClick={fetchStats} style={{ padding: '8px 16px', background: 'rgba(56,189,248,0.15)', border: '1px solid rgba(56,189,248,0.3)', borderRadius: '10px', color: '#38bdf8', fontSize: '12px', fontWeight: '700', cursor: 'pointer', letterSpacing: '0.5px' }}>
+              ↺ REFRESH
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div style={{
-        maxWidth: '1400px',
-        margin: '0 auto',
-        padding: '30px',
-        position: 'relative',
-        zIndex: 1
-      }}>
+        {/* ── Error / Loading ── */}
+        {error && <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '16px', color: '#f87171', marginBottom: '20px' }}>⚠ {error}</div>}
         {loading && (
-          <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-            <div style={{
-              display: 'inline-block',
-              width: '40px',
-              height: '40px',
-              border: '4px solid #e2e8f0',
-              borderTopColor: '#3182ce',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}></div>
-            <p style={{ marginTop: '20px', color: '#718096' }}>Loading dashboard data...</p>
-          </div>
-        )}
-
-        {error && (
-          <div style={{
-            padding: '16px 20px',
-            backgroundColor: '#fed7d7',
-            color: '#c53030',
-            borderRadius: '8px',
-            marginBottom: '30px',
-            border: '1px solid #feb2b2'
-          }}>
-            <strong>Error:</strong> {error}
-          </div>
-        )}
-
-        {!loading && !error && (
-          <>
-            {/* Summary Cards */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              gap: '24px',
-              marginBottom: '30px'
-            }}>
-              {/* Total Violations Card */}
-              <div style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                borderRadius: '12px',
-                padding: '28px',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '-20px',
-                  right: '-20px',
-                  width: '120px',
-                  height: '120px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%'
-                }}></div>
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    opacity: 0.9,
-                    marginBottom: '12px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Total Violations
-                  </div>
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: '700',
-                    marginBottom: '8px',
-                    lineHeight: '1'
-                  }}>
-                    {summary.total}
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    opacity: 0.8
-                  }}>
-                    All recorded violations
-                  </div>
-                </div>
-              </div>
-
-              {/* WARNING Alerts Card */}
-              <div style={{
-                background: summary.warnings > 0 
-                  ? 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)'
-                  : 'linear-gradient(135deg, #e0e0e0 0%, #bdbdbd 100%)',
-                borderRadius: '12px',
-                padding: '28px',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '-20px',
-                  right: '-20px',
-                  width: '120px',
-                  height: '120px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%'
-                }}></div>
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    opacity: 0.9,
-                    marginBottom: '12px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Warning Alerts
-                  </div>
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: '700',
-                    marginBottom: '8px',
-                    lineHeight: '1'
-                  }}>
-                    {summary.warnings}
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    opacity: 0.8,
-                    marginBottom: '12px'
-                  }}>
-                    Violations with 3+ counts
-                  </div>
-                  {summary.warnings > 0 && (
-                    <div style={{
-                      display: 'inline-block',
-                      padding: '6px 14px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                      borderRadius: '20px',
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}>
-                      ⚠️ Active
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* CRITICAL Alerts Card */}
-              <div style={{
-                background: summary.criticals > 0
-                  ? 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'
-                  : 'linear-gradient(135deg, #e0e0e0 0%, #bdbdbd 100%)',
-                borderRadius: '12px',
-                padding: '28px',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '-20px',
-                  right: '-20px',
-                  width: '120px',
-                  height: '120px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%'
-                }}></div>
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    opacity: 0.9,
-                    marginBottom: '12px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Critical Alerts
-                  </div>
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: '700',
-                    marginBottom: '8px',
-                    lineHeight: '1'
-                  }}>
-                    {summary.criticals}
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    opacity: 0.8,
-                    marginBottom: '12px'
-                  }}>
-                    Violations with 5+ counts
-                  </div>
-                  {summary.criticals > 0 && (
-                    <div style={{
-                      display: 'inline-block',
-                      padding: '6px 14px',
-                      backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                      borderRadius: '20px',
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}>
-                      🚨 Urgent
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Average Violation Count Card */}
-              <div style={{
-                background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-                borderRadius: '12px',
-                padding: '28px',
-                color: 'white',
-                boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '-20px',
-                  right: '-20px',
-                  width: '120px',
-                  height: '120px',
-                  background: 'rgba(255, 255, 255, 0.1)',
-                  borderRadius: '50%'
-                }}></div>
-                <div style={{ position: 'relative', zIndex: 1 }}>
-                  <div style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    opacity: 0.9,
-                    marginBottom: '12px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Avg Count
-                  </div>
-                  <div style={{
-                    fontSize: '48px',
-                    fontWeight: '700',
-                    marginBottom: '8px',
-                    lineHeight: '1'
-                  }}>
-                    {summary.avgViolationCount}
-                  </div>
-                  <div style={{
-                    fontSize: '13px',
-                    opacity: 0.8
-                  }}>
-                    Average per violation
-                  </div>
-                </div>
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', gap: '20px' }}>
+            <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+              <div style={{ position: 'absolute', inset: 0, border: '3px solid rgba(56,189,248,0.1)', borderRadius: '50%' }} />
+              <div style={{ position: 'absolute', inset: 0, border: '3px solid transparent', borderTopColor: '#38bdf8', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
             </div>
+            <div style={{ color: '#38bdf8', fontWeight: '700', fontSize: '14px', letterSpacing: '3px' }}>LOADING HIGHWAY DATA...</div>
+          </div>
+        )}
 
-            {/* Charts Row */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-              gap: '24px',
-              marginBottom: '30px'
-            }}>
-              {/* Violations by Type Chart */}
-              <div style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '12px',
-                padding: '24px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)',
-                border: '1px solid #e2e8f0'
-              }}>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: '600',
-                  color: '#1a202c',
-                  marginBottom: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}>
-                  <span>📊</span> Violations by Type
-                </div>
-                <div style={{ height: '280px' }}>
-                  {typeData.labels.length > 0 ? (
-                    <Bar
-                      data={{
-                        labels: typeData.labels,
-                        datasets: [{
-                          label: 'Count',
-                          data: typeData.data,
-                          backgroundColor: [
-                            'rgba(99, 102, 241, 0.8)',
-                            'rgba(236, 72, 153, 0.8)',
-                            'rgba(251, 191, 36, 0.8)',
-                            'rgba(34, 197, 94, 0.8)',
-                            'rgba(249, 115, 22, 0.8)',
-                            'rgba(139, 92, 246, 0.8)'
-                          ],
-                          borderColor: [
-                            'rgba(99, 102, 241, 1)',
-                            'rgba(236, 72, 153, 1)',
-                            'rgba(251, 191, 36, 1)',
-                            'rgba(34, 197, 94, 1)',
-                            'rgba(249, 115, 22, 1)',
-                            'rgba(139, 92, 246, 1)'
-                          ],
-                          borderWidth: 2,
-                          borderRadius: 6
-                        }]
-                      }}
-                      options={typeChartOptions}
-                    />
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '60px 0', color: '#718096' }}>
-                      No data available
-                    </div>
-                  )}
-                </div>
+        {!loading && stats && (() => {
+          const { overview, dailyCounts, speedBuckets, hotspots, hourly, topOffenders, recentCritical, latestViolations } = stats;
+          return (
+            <>
+              {/* ── KPI Strip ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '24px' }}>
+                <StatCard label="Total Violations" value={overview.total}       color="#38bdf8" icon="⬡" sub={`${overview.today} today`} />
+                <StatCard label="High Speed (>120)" value={overview.highSpeed}   color="#ef4444" icon="⚡" sub="Critical alerts" pulse glow="rgba(239,68,68,0.15)" />
+                <StatCard label="Medium (101-120)"   value={overview.mediumSpeed} color="#f97316" icon="◈" sub="Warning zone" />
+                <StatCard label="This Week"          value={overview.thisWeek}   color="#818cf8" icon="◆" sub="Last 7 days" />
+                <StatCard label="Alerts Sent"        value={overview.alertsSent} color="#10b981" icon="◉" sub="Mobile notifications" />
+                <StatCard label="Max Speed"          value={`${overview.maxSpeed}`} color="#f59e0b" icon="▲" sub="km/h recorded" />
+                <StatCard label="Avg Speed"          value={`${overview.avgSpeed}`} color="#64748b" icon="~" sub="km/h average" />
+                <StatCard label="Critical Drivers"   value={overview.criticalDrivers} color="#ef4444" icon="⚑" sub="Score < 40" />
               </div>
 
-              {/* Violations Over Time Chart */}
-              <div style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '12px',
-                padding: '24px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)',
-                border: '1px solid #e2e8f0'
-              }}>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: '600',
-                  color: '#1a202c',
-                  marginBottom: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}>
-                  <span>📈</span> Violations Over Time
-                </div>
-                <div style={{ height: '280px' }}>
-                  {timeData.labels.length > 0 ? (
+              {/* ── Row 1: Trend Chart + Donut ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                {/* Daily Trend */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#38bdf8' }}>◈</span> 14-Day Violation Trend</div>
+                  <div style={{ height: '220px' }}>
                     <Line
                       data={{
-                        labels: timeData.labels,
-                        datasets: [{
-                          label: 'Violations',
-                          data: timeData.data,
-                          borderColor: 'rgba(99, 102, 241, 1)',
-                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                          borderWidth: 3,
-                          tension: 0.4,
-                          fill: true,
-                          pointRadius: 4,
-                          pointHoverRadius: 6,
-                          pointBackgroundColor: '#ffffff',
-                          pointBorderColor: 'rgba(99, 102, 241, 1)',
-                          pointBorderWidth: 2
-                        }]
+                        labels: dailyCounts.map(d => d.label),
+                        datasets: [
+                          {
+                            label: 'All Violations', data: dailyCounts.map(d => d.count),
+                            borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.08)',
+                            borderWidth: 2.5, tension: 0.4, fill: true, pointRadius: 3,
+                            pointBackgroundColor: '#38bdf8', pointBorderColor: '#0a0e1a', pointBorderWidth: 2,
+                          },
+                          {
+                            label: 'High Speed', data: dailyCounts.map(d => d.highCount),
+                            borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.06)',
+                            borderWidth: 2, tension: 0.4, fill: true, pointRadius: 3,
+                            pointBackgroundColor: '#ef4444', pointBorderColor: '#0a0e1a', pointBorderWidth: 2,
+                          },
+                        ],
                       }}
-                      options={timeChartOptions}
+                      options={{ ...darkChart, plugins: { ...darkChart.plugins, legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 12 } } } }}
                     />
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '60px 0', color: '#718096' }}>
-                      No data available
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Alert Distribution Chart */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
-              gap: '24px',
-              marginBottom: '30px'
-            }}>
-              <div style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '12px',
-                padding: '24px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)',
-                border: '1px solid #e2e8f0'
-              }}>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: '600',
-                  color: '#1a202c',
-                  marginBottom: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}>
-                  <span>🎯</span> Alert Distribution
-                </div>
-                <div style={{ height: '280px' }}>
-                  {alertData.data.some(v => v > 0) ? (
+                {/* Speed Category Donut */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#818cf8' }}>◆</span> Speed Categories</div>
+                  <div style={{ height: '180px' }}>
                     <Doughnut
                       data={{
-                        labels: alertData.labels,
+                        labels: ['Medium (101-120)', 'High (>120)'],
                         datasets: [{
-                          data: alertData.data,
-                          backgroundColor: alertData.colors,
-                          borderColor: '#ffffff',
-                          borderWidth: 3,
-                          hoverOffset: 10
-                        }]
+                          data: [overview.mediumSpeed, overview.highSpeed],
+                          backgroundColor: ['rgba(249,115,22,0.8)', 'rgba(239,68,68,0.85)'],
+                          borderColor: ['#f97316', '#ef4444'], borderWidth: 2, hoverOffset: 8,
+                        }],
                       }}
-                      options={alertChartOptions}
+                      options={{ ...darkChart, cutout: '65%', plugins: { ...darkChart.plugins, legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 10, padding: 10 } } } }}
                     />
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '60px 0', color: '#718096' }}>
-                      No data available
-                    </div>
-                  )}
+                  </div>
+                  <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                    <div style={{ fontSize: '22px', fontWeight: '900', color: '#f1f5f9' }}>{overview.total}</div>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '600' }}>TOTAL VIOLATIONS</div>
+                  </div>
                 </div>
               </div>
 
-              {/* Quick Actions */}
-              <div style={{
-                backgroundColor: '#ffffff',
-                borderRadius: '12px',
-                padding: '24px',
-                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.06)',
-                border: '1px solid #e2e8f0'
-              }}>
-                <div style={{
-                  fontSize: '18px',
-                  fontWeight: '600',
-                  color: '#1a202c',
-                  marginBottom: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}>
-                  <span>⚡</span> Quick Actions
+              {/* ── Row 2: Speed Distribution + Heatmap ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                {/* Speed Bucket Bar */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#f97316' }}>⬡</span> Speed Distribution (km/h)</div>
+                  <div style={{ height: '200px' }}>
+                    <Bar
+                      data={{
+                        labels: Object.keys(speedBuckets),
+                        datasets: [{
+                          label: 'Violations',
+                          data: Object.values(speedBuckets),
+                          backgroundColor: ['rgba(56,189,248,0.7)','rgba(96,165,250,0.7)','rgba(249,115,22,0.7)','rgba(239,68,68,0.7)','rgba(239,68,68,0.85)','rgba(220,38,38,0.9)'],
+                          borderColor: ['#38bdf8','#60a5fa','#f97316','#ef4444','#ef4444','#dc2626'],
+                          borderWidth: 1.5, borderRadius: 6,
+                        }],
+                      }}
+                      options={{ ...darkChart, plugins: { ...darkChart.plugins, legend: { display: false } } }}
+                    />
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {getAvailablePages().map((page) => (
-                    <Link
-                      key={page.path}
-                      to={page.path}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        padding: '16px',
-                        backgroundColor: '#f7fafc',
-                        borderRadius: '8px',
-                        textDecoration: 'none',
-                        color: '#2d3748',
-                        fontWeight: '500',
-                        transition: 'all 0.2s',
-                        border: '1px solid #e2e8f0'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#edf2f7';
-                        e.currentTarget.style.transform = 'translateX(4px)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f7fafc';
-                        e.currentTarget.style.transform = 'translateX(0)';
-                      }}
-                    >
-                      <span style={{ fontSize: '20px' }}>{page.icon}</span>
-                      <span>{page.name}</span>
-                      <span style={{ marginLeft: 'auto', color: '#718096' }}>→</span>
-                    </Link>
-                  ))}
-                  <button
-                    onClick={fetchViolations}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      padding: '16px',
-                      backgroundColor: '#3182ce',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      width: '100%',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <span>🔄</span>
-                    <span>Refresh Data</span>
-                  </button>
+
+                {/* Hourly Heatmap */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#f59e0b' }}>◉</span> Activity Heatmap (by Hour)</div>
+                  <HourlyHeatmap data={hourly} />
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '16px', flexWrap: 'wrap' }}>
+                    {[['#ef4444','70%+ peak'], ['#f97316','40-70%'], ['#f59e0b','15-40%'], ['#1e293b','Low']].map(([c, l]) => (
+                      <span key={l} style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#64748b' }}>
+                        <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: c, display: 'inline-block' }} />{l}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          </>
-        )}
+
+              {/* ── Row 3: Hotspots + Top Offenders ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                {/* RFID Hotspots */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#ef4444' }}>⚠</span> RFID Hotspot Checkpoints</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {hotspots.map((h, i) => {
+                      const maxCount = hotspots[0]?.count || 1;
+                      const pct = (h.count / maxCount) * 100;
+                      const colors = ['#ef4444','#f97316','#f59e0b','#38bdf8','#818cf8'];
+                      return (
+                        <div key={h.checkpoint}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span style={{ fontSize: '13px', fontWeight: '700', color: '#e2e8f0', fontFamily: 'monospace' }}>{h.checkpoint}</span>
+                            <span style={{ fontSize: '12px', color: colors[i], fontWeight: '700' }}>{h.count} events</span>
+                          </div>
+                          <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${colors[i]}, ${colors[i]}aa)`, borderRadius: '3px', boxShadow: `0 0 8px ${colors[i]}60`, transition: 'width 0.6s ease' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Top Offenders */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#818cf8' }}>◆</span> Top Repeat Offenders</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {topOffenders.map((v, i) => (
+                      <div key={v.vehicleNumber} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', background: 'rgba(15,23,42,0.5)', borderRadius: '10px', border: '1px solid rgba(56,189,248,0.06)' }}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: i === 0 ? 'linear-gradient(135deg,#f59e0b,#d97706)' : 'rgba(100,116,139,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '800', color: i === 0 ? 'white' : '#64748b', flexShrink: 0 }}>
+                          {i === 0 ? '⚑' : `#${i+1}`}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#38bdf8', fontSize: '13px' }}>{v.vehicleNumber}</div>
+                          <div style={{ fontSize: '11px', color: '#475569', marginTop: '1px' }}>{v.count} violations · Last: {v.latestSpeed}km/h</div>
+                        </div>
+                        <SpeedBadge cat={v.speedCategory} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Row 4: Live Critical Feed + Recent Violations ── */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '16px' }}>
+                {/* Critical Alerts */}
+                <div style={{ ...s.card, border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div style={s.sectionTitle}>
+                    <span style={{ color: '#ef4444', animation: 'pulse 1.5s infinite' }}>⚡</span>
+                    Recent Critical Alerts
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto' }}>
+                    {recentCritical.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '32px', color: '#475569' }}>No critical alerts</div>
+                    ) : recentCritical.map((v, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'center', padding: '10px 12px', background: 'rgba(239,68,68,0.06)', borderRadius: '10px', border: '1px solid rgba(239,68,68,0.15)' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', flexShrink: 0, boxShadow: '0 0 8px #ef4444', animation: 'pulse 2s infinite' }} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontFamily: 'monospace', fontWeight: '800', color: '#38bdf8', fontSize: '13px' }}>{v.vehicleNumber}</span>
+                            <span style={{ fontSize: '18px', fontWeight: '900', color: '#ef4444' }}>{v.speed}<span style={{ fontSize: '10px', fontWeight: '400', color: '#64748b' }}> km/h</span></span>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#475569', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>📡 {v.checkpoint || 'Unknown'}</span>
+                            <span>{v.alertSent ? <span style={{ color: '#10b981' }}>✓ Notified</span> : <span style={{ color: '#f59e0b' }}>⚑ Pending</span>}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Latest Violations Table */}
+                <div style={s.card}>
+                  <div style={s.sectionTitle}><span style={{ color: '#38bdf8' }}>⬡</span> Latest Violation Feed</div>
+                  <div style={{ overflowY: 'auto', maxHeight: '340px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                        <tr>
+                          {['Vehicle', 'Speed', 'Category', 'Checkpoint', 'Time'].map(h => (
+                            <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: '10px', fontWeight: '700', color: '#475569', textTransform: 'uppercase', letterSpacing: '1px', background: 'rgba(10,14,26,0.9)', borderBottom: '1px solid rgba(56,189,248,0.08)' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {latestViolations.map((v, i) => (
+                          <tr key={i}
+                            style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.15s' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(56,189,248,0.04)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <td style={{ padding: '9px 10px', fontFamily: 'monospace', fontWeight: '700', color: '#38bdf8', fontSize: '12px' }}>{v.vehicleNumber}</td>
+                            <td style={{ padding: '9px 10px', fontWeight: '800', fontSize: '14px', color: v.speedCategory === 'High' ? '#ef4444' : '#f97316' }}>{v.speed}<span style={{ fontSize: '10px', color: '#64748b', fontWeight: '400' }}>km/h</span></td>
+                            <td style={{ padding: '9px 10px' }}><SpeedBadge cat={v.speedCategory} /></td>
+                            <td style={{ padding: '9px 10px', fontSize: '11px', color: '#64748b', fontFamily: 'monospace' }}>{v.checkpoint || '—'}</td>
+                            <td style={{ padding: '9px 10px', fontSize: '11px', color: '#475569' }}>{new Date(v.timestamp).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        <style>{`
+          @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(1.15)} }
+          @keyframes spin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+          ::-webkit-scrollbar { width:4px; height:4px }
+          ::-webkit-scrollbar-track { background:rgba(255,255,255,0.02) }
+          ::-webkit-scrollbar-thumb { background:rgba(56,189,248,0.3); border-radius:2px }
+        `}</style>
       </div>
-
-      {/* Add CSS animation for spinner */}
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-    </div>
+    </Layout>
   );
 };
 

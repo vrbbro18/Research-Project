@@ -1,105 +1,115 @@
 const express = require('express');
 const router = express.Router();
 const { requireRole } = require('../middleware/authMiddleware');
-const violations = require('../data/violations');
 const alertService = require('../services/alertService');
+const Violation = require('../models/Violation');
 
 // GET /violations - List all violations with alert levels
-// Allow SUPER_ADMIN, OFFICER, and ANALYST (ANALYST needs this for charts)
-router.get('/', requireRole('SUPER_ADMIN', 'OFFICER', 'ANALYST'), (req, res) => {
-  // Map violations and add alert level to each record using alert service
-  const violationsWithAlerts = violations.map(violation => ({
-    ...violation,
-    alertLevel: alertService.calculateAlertLevel(violation.violationCount)
-  }));
+router.get('/', requireRole('SUPER_ADMIN', 'OFFICER', 'ANALYST'), async (req, res) => {
+  try {
+    const dbViolations = await Violation.find().sort({ timestamp: -1 });
 
-  res.json({
-    success: true,
-    message: 'Violations retrieved successfully',
-    role: req.userRole,
-    violations: violationsWithAlerts
-  });
+    // Convert to JSON and add alert level
+    const violationsWithAlerts = dbViolations.map(violation => {
+      const vJson = violation.toJSON();
+      return {
+        ...vJson,
+        id: vJson._id,
+        // Using a basic static alert level for manual violations for backward compatibility
+        alertLevel: alertService.calculateAlertLevel(1)
+      };
+    });
+
+    res.json({
+      success: true,
+      message: 'Violations retrieved successfully',
+      role: req.userRole,
+      violations: violationsWithAlerts
+    });
+  } catch (err) {
+    console.error('Error fetching violations', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve violations' });
+  }
 });
 
-// POST /violations - Manually add a new violation (SUPER_ADMIN and OFFICER only)
-router.post('/', requireRole('SUPER_ADMIN', 'OFFICER'), (req, res) => {
-  const { vehicleNumber, violationType, timestamp } = req.body;
+// POST /violations - Manually add a speed violation (research/test use)
+router.post('/', requireRole('SUPER_ADMIN', 'OFFICER'), async (req, res) => {
+  const { vehicleNumber, speed, checkpoint, timestamp } = req.body;
 
-  // Input validation
-  if (!vehicleNumber || !violationType) {
+  if (!vehicleNumber || !speed) {
     return res.status(400).json({
       success: false,
-      message: 'vehicleNumber and violationType are required'
+      message: 'vehicleNumber and speed (km/h) are required'
     });
   }
 
-  // Valid violation types
-  const validViolationTypes = ['Speeding', 'Red Light', 'Parking', 'No Seatbelt', 'Illegal Turn', 'Wrong Lane'];
-  if (!validViolationTypes.includes(violationType)) {
-    return res.status(400).json({
-      success: false,
-      message: `Invalid violationType. Must be one of: ${validViolationTypes.join(', ')}`
-    });
+  const speedValue = parseFloat(speed);
+  if (isNaN(speedValue) || speedValue <= 0) {
+    return res.status(400).json({ success: false, message: 'speed must be a valid positive number' });
   }
 
-  // Calculate new violation count for this vehicle (increment total count)
-  const currentTotalViolationCount = alertService.getCurrentViolationCount(violations, vehicleNumber);
-  const newTotalViolationCount = currentTotalViolationCount + 1;
+  const speedCategory = speedValue > 120 ? 'High' : speedValue >= 101 ? 'Medium' : 'Low';
+  if (speedCategory === 'Low') {
+    return res.status(400).json({ success: false, message: `Speed ${speedValue} km/h is below violation threshold (100 km/h)` });
+  }
 
-  // Generate new violation ID
-  const newId = violations.length > 0 ? Math.max(...violations.map(v => v.id)) + 1 : 1;
+  try {
+    const newViolation = new Violation({
+      vehicleNumber: vehicleNumber.trim(),
+      violationType: 'Speeding',
+      speed: speedValue,
+      speedCategory,
+      checkpoint: checkpoint || 'Manual Entry',
+      timestamp: timestamp || new Date(),
+    });
 
-  // Create new violation record
-  const newViolation = {
-    id: newId,
-    vehicleNumber: vehicleNumber.trim(),
-    violationType: violationType,
-    timestamp: timestamp || new Date().toISOString(),
-    violationCount: newTotalViolationCount,
-    source: 'manual' // Mark as manually added for research tracking
-  };
+    await newViolation.save();
 
-  // Add violation to the array (in-memory storage)
-  violations.push(newViolation);
-
-  // Calculate alert level
-  const alertLevel = alertService.calculateAlertLevel(newTotalViolationCount);
-
-  const violationWithAlert = {
-    ...newViolation,
-    alertLevel: alertLevel
-  };
-
-  res.json({
-    success: true,
-    message: 'Violation added successfully',
-    violation: violationWithAlert
-  });
+    res.json({
+      success: true,
+      message: `Speed violation recorded: ${speedValue} km/h (${speedCategory})`,
+      violation: {
+        id: newViolation._id,
+        vehicleNumber: newViolation.vehicleNumber,
+        speed: newViolation.speed,
+        speedCategory: newViolation.speedCategory,
+        checkpoint: newViolation.checkpoint,
+        timestamp: newViolation.timestamp,
+      }
+    });
+  } catch (error) {
+    console.error('Error adding violation', error);
+    res.status(500).json({ success: false, message: 'Failed to add violation' });
+  }
 });
 
-// GET /violations/:id - Get specific violation (SUPER_ADMIN and OFFICER only)
-router.get('/:id', requireRole('SUPER_ADMIN', 'OFFICER'), (req, res) => {
-  const violationId = parseInt(req.params.id);
-  const violation = violations.find(v => v.id === violationId);
+// GET /violations/:id - Get specific violation
+router.get('/:id', requireRole('SUPER_ADMIN', 'OFFICER'), async (req, res) => {
+  const violationId = req.params.id;
 
-  if (!violation) {
-    return res.status(404).json({
-      success: false,
-      message: `Violation with id ${violationId} not found`
+  try {
+    const violation = await Violation.findById(violationId);
+
+    if (!violation) {
+      return res.status(404).json({
+        success: false,
+        message: `Violation with id ${violationId} not found`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Violation ${violationId} retrieved`,
+      violation: {
+        id: violation._id,
+        ...violation.toJSON(),
+        alertLevel: alertService.calculateAlertLevel(1)
+      }
     });
+  } catch (error) {
+    console.error('Error fetching violation', error);
+    res.status(500).json({ success: false, message: 'Failed to get violation' });
   }
-
-  const violationWithAlert = {
-    ...violation,
-    alertLevel: alertService.calculateAlertLevel(violation.violationCount)
-  };
-
-  res.json({
-    success: true,
-    message: `Violation ${violationId} retrieved`,
-    violation: violationWithAlert
-  });
 });
 
 module.exports = router;
-

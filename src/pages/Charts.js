@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { getViolations } from '../services/api';
+import Layout from '../components/Layout';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -181,54 +182,19 @@ const Charts = ({ userRole, onLogout }) => {
   const lineChartData = processViolationsOverTime();
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <button
-          onClick={() => navigate(-1)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 16px',
-            backgroundColor: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'background-color 0.2s'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#5a6268'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#6c757d'}
-        >
-          <span>←</span> Back
-        </button>
+    <Layout userRole={userRole} onLogout={onLogout}>
+    <div style={{ padding: '28px', minHeight: '100vh', background: 'linear-gradient(135deg, #060a14 0%, #0d1117 100%)', color: '#e2e8f0' }}>
+      {/* Page Header */}
+      <div style={{ marginBottom: '28px' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: '800', background: 'linear-gradient(135deg, #f1f5f9, #38bdf8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
+          ◈ Analytics
+        </h1>
+        <p style={{ fontSize: '13px', color: '#64748b', fontWeight: '500', margin: 0 }}>
+          Violation trends and distribution charts
+          {userRole === 'ANALYST' && <span style={{ marginLeft: '12px', color: '#f59e0b', fontWeight: '600' }}>⚑ Read-only access</span>}
+        </p>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-        <h1>Charts & Analytics</h1>
-        <div>
-          <span style={{ marginRight: '20px' }}>Role: <strong>{userRole}</strong></span>
-          {userRole !== 'ANALYST' && (
-            <Link to="/dashboard" style={{ marginRight: '10px' }}>Dashboard</Link>
-          )}
-          <button onClick={onLogout} style={{ padding: '8px 16px' }}>
-            Logout
-          </button>
-        </div>
-      </div>
-      
-      {userRole === 'ANALYST' && (
-        <div style={{
-          backgroundColor: '#fff3cd',
-          padding: '15px',
-          borderRadius: '4px',
-          border: '2px solid #ffc107',
-          marginBottom: '20px'
-        }}>
-          <strong>⚠️ Restricted Access:</strong> As an ANALYST, you can only access the Charts page.
-        </div>
-      )}
+
 
       {loading && <p>Loading violations data...</p>}
       {error && <div style={{ color: 'red', marginBottom: '20px' }}>Error: {error}</div>}
@@ -260,6 +226,7 @@ const Charts = ({ userRole, onLogout }) => {
         </div>
       )}
     </div>
+    </Layout>
   );
 };
 

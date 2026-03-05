@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getViolations, sendAlert, createViolation } from '../services/api';
+import Layout from '../components/Layout';
 
 const Violations = ({ userRole, onLogout }) => {
   const navigate = useNavigate();
@@ -152,6 +153,7 @@ const Violations = ({ userRole, onLogout }) => {
   };
 
   return (
+    <Layout userRole={userRole} onLogout={onLogout}>
     <div style={{
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f1419 100%)',
@@ -1007,6 +1009,7 @@ const Violations = ({ userRole, onLogout }) => {
         }
       `}</style>
     </div>
+    </Layout>
   );
 };
 

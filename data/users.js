@@ -1,5 +1,7 @@
-// In-memory user data
-// In a production system, passwords should be hashed
+// In-memory user store for authentication
+// Used by routes/auth.js POST /login endpoint
+// Roles: SUPER_ADMIN, OFFICER, ANALYST
+
 const users = [
   {
     username: 'admin',
@@ -19,4 +21,3 @@ const users = [
 ];
 
 module.exports = users;
-
