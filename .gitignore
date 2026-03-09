@@ -39,7 +39,6 @@ env/
 *.pth
 *.onnx
 *.ckpt
-*.h5
 *.npz
 
 # Jupyter / notebooks
