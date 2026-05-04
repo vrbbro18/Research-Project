@@ -26,21 +26,50 @@ def load_all_models():
         print("TensorFlow unavailable – skipping model load.")
         return
 
-    print("Loading models… please wait.")
+    print("Loading models... please wait.")
 
     try:
         drowsiness_model = load_model(DROWSINESS_MODEL_PATH)
-        print("✅ Drowsiness model loaded successfully!")
+        print("[OK] Drowsiness model loaded successfully!")
     except Exception as e:
-        print(f"❌ Error loading drowsiness model: {e}")
+        print(f"[ERR] Error loading drowsiness model: {e}")
         print("Drowsiness model is required. Exiting.")
         raise SystemExit(1)
 
     try:
         emotion_model           = load_model(EMOTION_MODEL_PATH)
         emotion_model_available = True
-        print("✅ Emotion model loaded successfully!")
+        print("[OK] Emotion model loaded successfully!")
     except Exception as e:
-        print(f"❌ Emotion model not found: {e}")
+        print(f"[WARN] Emotion model not found: {e}")
         print("Defaulting to 'neutral' emotion.")
         emotion_model_available = False
+
+
+def load_drowsiness_only():
+    """
+    Lightweight loader for the standalone detector.py script.
+    Returns (drowsiness_model, emotion_model_or_None).
+    Raises RuntimeError if TensorFlow is absent.
+    """
+    if not _tf_available:
+        raise RuntimeError("TensorFlow not available — install tensorflow first.")
+
+    print("Loading models for standalone detector...")
+
+    drw_model = None
+    try:
+        drw_model = load_model(DROWSINESS_MODEL_PATH)
+        print("[OK] Drowsiness model loaded.")
+    except Exception as e:
+        raise RuntimeError(f"Cannot load drowsiness model: {e}") from e
+
+    emo_model = None
+    try:
+        emo_model = load_model(EMOTION_MODEL_PATH)
+        print("[OK] Emotion model loaded.")
+    except Exception as e:
+        print(f"[WARN] Emotion model unavailable: {e}. Defaulting to 'neutral'.")
+
+    return drw_model, emo_model
+

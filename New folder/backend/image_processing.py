@@ -80,6 +80,61 @@ def detect_face_and_eyes(image_path: str):
     return face_region, eye_region
 
 
+def detect_face_and_eyes_from_frame(frame: np.ndarray):
+    """
+    Same detection logic as detect_face_and_eyes() but accepts a BGR
+    numpy array directly. Used by the background inference thread to
+    avoid disk I/O when working with live webcam frames.
+
+    Returns (face_region_gray, eye_region_bgr).
+    Falls back to the full image when detection fails.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    eye_cascade  = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+
+    if len(faces) == 0:
+        return gray, frame  # fallback: full grayscale + full colour frame
+
+    (x, y, w, h) = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
+    face_region_gray  = gray[y:y+h, x:x+w]
+    face_region_color = frame[y:y+h, x:x+w]
+
+    eye_search_h = int(face_region_gray.shape[0] * 0.6)
+    eye_search   = face_region_gray[0:eye_search_h, :]
+    eyes         = eye_cascade.detectMultiScale(eye_search, scaleFactor=1.1,
+                                                minNeighbors=3, minSize=(20, 20))
+
+    if len(eyes) >= 2:
+        eyes_sorted = sorted(eyes, key=lambda e: e[0])
+        x1, y1, w1, h1 = eyes_sorted[0]
+        x2, y2, w2, h2 = eyes_sorted[1]
+        y_diff         = abs(y1 - y2)
+        avg_eye_h      = (h1 + h2) / 2
+
+        if y_diff > avg_eye_h:
+            eye_region = face_region_color[0:int(h * 0.5), :]
+        else:
+            eye_x = min(x1, x2)
+            eye_y = min(y1, y2)
+            eye_w = max(x1 + w1, x2 + w2) - eye_x
+            eye_h = max(y1 + h1, y2 + h2) - eye_y
+            px = int(eye_w * 0.2); py = int(eye_h * 0.2)
+            eye_x = max(0, eye_x - px)
+            eye_y = max(0, eye_y - py)
+            eye_w = min(face_region_color.shape[1] - eye_x, eye_w + 2 * px)
+            eye_h = min(face_region_color.shape[0] - eye_y, eye_h + 2 * py)
+            eye_region = face_region_color[eye_y:eye_y+eye_h, eye_x:eye_x+eye_w]
+    else:
+        eye_region = face_region_color[0:int(h * 0.6), :]
+
+    return face_region_gray, eye_region
+
+
+
 # ── Preprocessing ───────────────────────────────────────────
 
 def preprocess_for_drowsiness(eye_region) -> np.ndarray:

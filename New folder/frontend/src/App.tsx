@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import Webcam from "react-webcam";
 import axios from "axios";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import AnalysisInsights from "./AnalysisInsights";
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, ComposedChart } from "recharts";
 
 // API Response Interface
 interface ApiResponse {
   status: "Drowsy" | "Awake" | string;
   emotion: string;
+  emotion_raw?: string;
+  emotion_reason?: string;
   risk_level: string;
   action: string;
   message: string;
@@ -16,8 +15,21 @@ interface ApiResponse {
   current_minute_prediction?: CurrentMinutePrediction[];
   current_minute_metrics?: MinuteAnalysis["metrics"];
   future_predictions?: FuturePrediction[];
+  rolling_window?: any[];
+  predictive_trend?: any;
   insights?: string[];
   frontend_ear?: number;
+  frontend_mar?: number;
+  hybrid_decision?: {
+    status: string;
+    risk_level: string;
+    risk_prob: number;
+    uncertain: boolean;
+    disagreement: number;
+    source_weights: { live: number; snapshot: number };
+    source_probs: { live: number | null; snapshot: number | null };
+    reason: string;
+  };
   structured_analysis?: {
     drowsiness: { status: string; description: string };
     risk: { status: string; description: string };
@@ -30,9 +42,11 @@ interface MinuteAnalysis {
   x: number;
   label: string;
   metrics: {
-    drowsyPercentage: number;
+    riskScore: number;
     microSleeps: number;
-    maxConsecutiveDrowsy: number;
+    maxConsecutiveFatigue: number;
+    avgPerclos: number;
+    avgYawn: number;
   };
 }
 
@@ -40,13 +54,37 @@ interface FuturePrediction {
   minute: number;
   x: number;
   label: string;
-  predictedDrowsiness: number;
+  predictedRisk: number;
 }
 
 interface CurrentMinutePrediction {
   label: string;
   x: number;
   cPct: number;
+}
+
+interface LiveAnalyticsPoint {
+  ts: number;
+  label: string;
+  risk_prob: number;
+  status: string;
+  uncertain: boolean;
+  disagreement: number;
+  source_probs: { live: number | null; snapshot: number | null };
+  ear: number;
+  mar: number;
+  yawn: boolean;
+  emotion_raw: string;
+  emotion_display: string;
+  emotion_reason: string;
+}
+
+interface LiveAnalyticsResponse {
+  point: LiveAnalyticsPoint;
+  live_points: LiveAnalyticsPoint[];
+  current_minute_prediction?: CurrentMinutePrediction[];
+  future_predictions?: FuturePrediction[];
+  hybrid_decision?: ApiResponse["hybrid_decision"];
 }
 
 interface HistoryEntry extends ApiResponse {
@@ -74,42 +112,29 @@ function App() {
   const [manualStop, setManualStop] = useState<boolean>(false);
   const [isCameraMinimized, setIsCameraMinimized] = useState<boolean>(false);
   const [therapyStatus, setTherapyStatus] = useState<string>("Analyzing driver state...");
+  const [liveStatus, setLiveStatus] = useState<{
+    ear: number; mar: number; model_status: string; model_conf: number;
+    emotion: string; emotion_conf?: number; alert: boolean; ear_alert: boolean; model_alert: boolean;
+    yawn: boolean; face_detected: boolean;
+  } | null>(null);
+  const [liveAnalytics, setLiveAnalytics] = useState<LiveAnalyticsResponse | null>(null);
 
-  const webcamRef = useRef<Webcam>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const youtubePlayerRef = useRef<any>(null);
-  const intervalRef = useRef<number | null>(null);
   const continuousAlarmRef = useRef<number | null>(null);
   const lastVoiceWarningRef = useRef<number>(0);
-  const lastPlayedRef = useRef<{ [key: string]: number }>({});
-  const [faceLandmarker, setFaceLandmarker] = useState<FaceLandmarker | null>(null);
+  const lastPlayedRef = useRef<{ [key: string]: number }>({});;
+  const liveStatusRef = useRef<{
+    ear: number; mar: number; model_status: string; model_conf: number;
+    emotion: string; emotion_conf?: number; alert: boolean; ear_alert: boolean; model_alert: boolean;
+    yawn: boolean; face_detected: boolean;
+  } | null>(null);
 
-  // Initialize MediaPipe FaceLandmarker
-  useEffect(() => {
-    const initializeLandmarker = async () => {
-      try {
-        const filesetResolver = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.x/wasm"
-        );
-        const landmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
-          baseOptions: {
-            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "GPU"
-          },
-          outputFaceBlendshapes: false,
-          runningMode: "VIDEO",
-          numFaces: 1
-        });
-        setFaceLandmarker(landmarker);
-        console.log("MediaPipe Dual-Way Vision loaded!");
-      } catch (e) {
-        console.error("Failed to load FaceLandmarker", e);
-      }
-    };
-    initializeLandmarker();
-  }, []);
+
 
   const API_URL = "http://127.0.0.1:5000/analyze";
+  const SNAPSHOT_PROBE_URL = "http://127.0.0.1:5000/snapshot_probe";
+  const LIVE_ANALYTICS_URL = "http://127.0.0.1:5000/live_analytics";
 
   // Professional Music Therapy Library
   // Scientifically categorized by therapeutic effect
@@ -513,7 +538,7 @@ function App() {
 
     // Determine absolute severity (0: stable, 1: warning, 2: critical danger)
     let theThreat = 0;
-    const anomalyStreak = responseData.current_minute_metrics?.maxConsecutiveDrowsy || 0;
+    const anomalyStreak = responseData.current_minute_metrics?.maxConsecutiveFatigue || 0;
     const isCurrentlyDrowsy = responseData.status === "Drowsy";
 
     // Siren (Level 2) MUST ONLY sound if the user is CURRENTLY drowsy in this exact frame, 
@@ -568,7 +593,7 @@ function App() {
             setTargetVolume(70);
             playAudio(newAction);
           } else {
-            infoText = "⚠️ PATTERN WARNING: Drowsiness streak rising. Smoothly scaling volume UP (80%)...";
+            infoText = "⚠️ PATTERN WARNING: Fatigue streak rising. Scaling volume UP (80%)...";
             setTargetVolume(80);
           }
 
@@ -649,72 +674,96 @@ function App() {
     [manualEmotion, manualDrowsiness]
   );
 
-  // Capture from webcam
-  const captureFromWebcam = useCallback(() => {
-    if (webcamRef.current) {
-      let frontendEar: number | null = null;
 
-      // Dual-way local vision check
-      if (faceLandmarker && webcamRef.current.video && webcamRef.current.video.readyState >= 2) {
-        try {
-          const results = faceLandmarker.detectForVideo(webcamRef.current.video, performance.now());
-          if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-            const landmarks = results.faceLandmarks[0];
-            const pt = (idx: number) => landmarks[idx];
-            const dist = (p1: any, p2: any) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
-            const calcEAR = (eye: number[]) => {
-              const v1 = dist(pt(eye[1]), pt(eye[5]));
-              const v2 = dist(pt(eye[2]), pt(eye[4]));
-              const h = dist(pt(eye[0]), pt(eye[3]));
-              return (v1 + v2) / (2.0 * h);
-            };
-            const leftEar = calcEAR([362, 385, 387, 263, 373, 380]);
-            const rightEar = calcEAR([33, 160, 158, 133, 153, 144]);
-            frontendEar = (leftEar + rightEar) / 2.0;
-          }
-        } catch (e) {
-          console.error("Dual-way vision failed:", e);
-        }
-      }
-
-      const imageSrc = webcamRef.current.getScreenshot();
-      if (imageSrc) {
-        // Convert base64 to blob
-        fetch(imageSrc)
-          .then((res) => res.blob())
-          .then((blob) => {
-            analyzeImage(blob, frontendEar);
-          })
-          .catch((err: Error) => {
-            console.error("Failed to capture image:", err);
-            setError("Failed to capture image from webcam");
-            setTherapyStatus(`Failed to capture image: ${err.message}`);
-          });
-      }
-    }
-  }, [analyzeImage, faceLandmarker]);
-
+  // Poll /status every 500ms for real-time EAR/MAR/alert metrics
   useEffect(() => {
-    if (mode === "webcam") {
-      intervalRef.current = window.setInterval(() => {
-        captureFromWebcam();
-      }, 3000);
-      setTherapyStatus("Webcam mode active. Auto-capturing every 3 seconds.");
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      setTherapyStatus("Upload mode active. Awaiting image upload.");
-    }
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:5000/status");
+        if (res.ok) setLiveStatus(await res.json());
+      } catch { /* backend not ready yet */ }
+    }, 500);
+    return () => clearInterval(poll);
+  }, []);
 
-    // Cleanup on unmount
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+  // Keep latest live status in a ref so the snapshot interval does not
+  // need to recreate every 500 ms.
+  useEffect(() => {
+    liveStatusRef.current = liveStatus;
+  }, [liveStatus]);
+
+  // Trigger a backend snapshot probe every 3 seconds in webcam mode.
+  // This keeps the legacy snapshot-model path active in parallel with live mode.
+  useEffect(() => {
+    if (mode !== "webcam") return;
+
+    let busy = false;
+    const tick = async () => {
+      if (busy) return;
+      busy = true;
+
+      try {
+        const ls = liveStatusRef.current;
+        await fetch(SNAPSHOT_PROBE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            manual_emotion: manualEmotion,
+            manual_drowsiness: manualDrowsiness,
+            frontend_ear: ls?.ear ?? null,
+            frontend_mar: ls?.mar ?? null,
+            frontend_yawn: ls?.yawn ?? false,
+          }),
+        });
+      } catch {
+        // Backend may be unavailable during startup; keep loop alive.
+      } finally {
+        busy = false;
       }
     };
-  }, [mode, captureFromWebcam]);
+
+    tick();
+    const interval = setInterval(tick, 3000);
+    return () => clearInterval(interval);
+  }, [mode, manualEmotion, manualDrowsiness, SNAPSHOT_PROBE_URL]);
+
+  // Poll /live_analytics every 1s for high-resolution charting and
+  // emotion stabilization visibility.
+  useEffect(() => {
+    if (mode !== "webcam") return;
+
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(LIVE_ANALYTICS_URL);
+        if (res.ok) {
+          const data = await res.json() as LiveAnalyticsResponse;
+          setLiveAnalytics(data);
+        }
+      } catch {
+        // Backend may be unavailable during startup; keep loop alive.
+      }
+    }, 1000);
+
+    return () => clearInterval(poll);
+  }, [mode, LIVE_ANALYTICS_URL]);
+
+  // Poll /research every 5s — sets responseData so ALL charts,
+  // music-therapy logic, and dashboard cards keep working unchanged.
+  useEffect(() => {
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:5000/research");
+        if (res.ok) {
+          const data = await res.json();
+          setResponseData(data);
+          setHistory(prev => [...prev, { ...data, timestamp: new Date() }].slice(-20));
+          setTherapyStatus(`Analysis updated: ${data.status}, ${data.emotion}.`);
+        }
+      } catch { /* backend not ready yet */ }
+    }, 5000);
+    setTherapyStatus("Live stream mode active. Python backend is driving the camera.");
+    return () => clearInterval(poll);
+  }, []);
 
   // Handle file upload
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -754,86 +803,259 @@ function App() {
     return "success";
   };
 
-  // Get latest metrics (Completed minute OR Current live minute)
-  const currentMetrics = responseData?.current_minute_metrics || responseData?.minute_analysis?.[responseData.minute_analysis.length - 1]?.metrics;
 
-  // Format data for Recharts - actual trends + Live point
+  // Format data for Recharts — all hybrid metrics per minute
   const chartData = useMemo(() => {
+    type MinuteChartRow = {
+      name: string;
+      "Risk Score": number;
+      "Fused Risk %": number | null;
+      "PERCLOS %": number;
+      "Yawn %": number;
+      "Micro-sleeps": number;
+      "Fatigue Streak": number;
+    };
+
     if (!responseData) return [];
 
-    // Existing completed minutes
-    const data = (responseData.minute_analysis || []).map(m => ({
+    const data: MinuteChartRow[] = (responseData.minute_analysis || []).map(m => ({
       name: m.label,
-      Drowsiness: m.metrics.drowsyPercentage,
-      MicroSleeps: m.metrics.microSleeps,
-      MaxStreak: m.metrics.maxConsecutiveDrowsy,
+      "Risk Score":  m.metrics.riskScore,
+      "Fused Risk %": null,
+      "PERCLOS %":   m.metrics.avgPerclos ?? 0,
+      "Yawn %":      m.metrics.avgYawn    ?? 0,
+      "Micro-sleeps": m.metrics.microSleeps,
+      "Fatigue Streak": m.metrics.maxConsecutiveFatigue,
     }));
 
-    // Add Live point for the current partial minute
     if (responseData.current_minute_metrics) {
       const curMin = (responseData.minute_analysis && responseData.minute_analysis.length > 0)
         ? responseData.minute_analysis[responseData.minute_analysis.length - 1].minute + 1
         : 1;
-
       data.push({
         name: `Min ${curMin} (Live)`,
-        Drowsiness: responseData.current_minute_metrics.drowsyPercentage,
-        MicroSleeps: responseData.current_minute_metrics.microSleeps,
-        MaxStreak: responseData.current_minute_metrics.maxConsecutiveDrowsy,
+        "Risk Score":     responseData.current_minute_metrics.riskScore,
+        "Fused Risk %":   responseData.hybrid_decision
+          ? Number((responseData.hybrid_decision.risk_prob * 100).toFixed(1))
+          : responseData.current_minute_metrics.riskScore,
+        "PERCLOS %":      (responseData.current_minute_metrics as any).avgPerclos ?? 0,
+        "Yawn %":         (responseData.current_minute_metrics as any).avgYawn    ?? 0,
+        "Micro-sleeps":   responseData.current_minute_metrics.microSleeps,
+        "Fatigue Streak": responseData.current_minute_metrics.maxConsecutiveFatigue,
       });
     }
 
     return data;
   }, [responseData]);
 
-  // Build combined prediction chart dataset using NUMERIC x axis
-  // actual/future → integer x (1,2,3...), current-minute → fractional x (2.05, 2.15...)
-  // This ensures the orange section is always visually distinct between two whole minutes.
-  const predictionChartData = useMemo(() => {
-    const actualMins = responseData?.minute_analysis || [];
-    const currentPreds = (responseData?.current_minute_prediction || []) as CurrentMinutePrediction[];
-    const futurePreds = (responseData?.future_predictions || []) as FuturePrediction[];
-
-    if (actualMins.length === 0 && currentPreds.length === 0) return [];
-
-    type Point = { x: number; label: string; actual: number | null; current: number | null; future: number | null };
-    const map = new Map<number, Point>();
-
-    const upsert = (x: number, label: string, patch: Partial<Omit<Point, 'x' | 'label'>>) => {
-      const key = Math.round(x * 1000) / 1000; // avoid 1.10000000000001 != 1.1
-      const existing = map.get(key) ?? { x: key, label, actual: null, current: null, future: null };
-      map.set(key, { ...existing, ...patch });
+  const liveRiskChartData = useMemo(() => {
+    type LiveRiskRow = {
+      name: string;
+      "Live Fused Risk": number | null;
+      "Predicted Risk": number | null;
+      "Uncertain": number | null;
+      "Disagreement %": number | null;
     };
 
-    // Section 1 – completed actual minutes (integer x)
-    actualMins.forEach(m => upsert(m.x ?? m.minute, m.label, { actual: m.metrics.drowsyPercentage }));
+    const points = liveAnalytics?.live_points || [];
+    if (points.length === 0) return [];
 
-    // Section 2 – current-minute live prediction (fractional x for intermediate, integer for overlap/end)
-    currentPreds.forEach(p => upsert(p.x, p.label, { current: p.cPct }));
-
-    // Bridge: last actual point also carries 'current' so the orange line starts from there
-    if (actualMins.length > 0 && currentPreds.length > 0) {
-      const lastActualX = actualMins[actualMins.length - 1].x ?? actualMins[actualMins.length - 1].minute;
-      const pt = map.get(lastActualX);
-      if (pt && pt.current === null) pt.current = pt.actual;
-    }
-
-    // Section 3 – future minutes (integer x)
-    futurePreds.forEach((p, i) => {
-      // Bridge first future point from last current or actual
-      if (i === 0) {
-        const allPts = Array.from(map.values()).sort((a, b) => a.x - b.x);
-        const lastPt = allPts[allPts.length - 1];
-        if (lastPt && lastPt.x !== p.x) {
-          lastPt.future = lastPt.current ?? lastPt.actual;
-          map.set(lastPt.x, lastPt);
-        }
-      }
-      upsert(p.x, p.label, { future: p.predictedDrowsiness });
+    const data: LiveRiskRow[] = points.map((p) => {
+      const risk = Number((p.risk_prob * 100).toFixed(1));
+      const confHalf = Math.max(4, Math.min(22, 5 + (p.disagreement * 20) + (p.uncertain ? 8 : 0)));
+      const confLow = Math.max(0, Number((risk - confHalf).toFixed(1)));
+      const confHigh = Math.min(100, Number((risk + confHalf).toFixed(1)));
+      return {
+        name: p.label,
+        "Live Fused Risk": risk,
+        "Predicted Risk": null as number | null,
+        "Uncertain": p.uncertain ? 1 : 0,
+        "Disagreement %": Number((p.disagreement * 100).toFixed(1)),
+        "Confidence Base": confLow,
+        "Confidence Range": Number((confHigh - confLow).toFixed(1)),
+        "Uncertain Marker": p.uncertain ? risk : null,
+      } as LiveRiskRow & {
+        "Confidence Base": number;
+        "Confidence Range": number;
+        "Uncertain Marker": number | null;
+      };
     });
 
-    return Array.from(map.values()).sort((a, b) => a.x - b.x);
+    const curPred = liveAnalytics?.current_minute_prediction || [];
+    if (curPred.length > 0) {
+      data.push(...curPred.map((pt, idx) => ({
+        name: idx === curPred.length - 1 ? `${pt.label} (Now*)` : `${pt.label} (Est)`,
+        "Live Fused Risk": null,
+        "Predicted Risk": Number(pt.cPct.toFixed(1)),
+        "Uncertain": null,
+        "Disagreement %": null,
+        "Confidence Base": null,
+        "Confidence Range": null,
+        "Uncertain Marker": null,
+      })));
+    }
+
+    const fut = liveAnalytics?.future_predictions || [];
+    if (fut.length > 0) {
+      data.push(...fut.map((pt) => ({
+        name: `${pt.label} (Forecast)`,
+        "Live Fused Risk": null,
+        "Predicted Risk": Number(pt.predictedRisk.toFixed(1)),
+        "Uncertain": null,
+        "Disagreement %": null,
+        "Confidence Base": null,
+        "Confidence Range": null,
+        "Uncertain Marker": null,
+      })));
+    }
+
+    return data;
+  }, [liveAnalytics]);
+
+  const liveSignalChartData = useMemo(() => {
+    const points = liveAnalytics?.live_points || [];
+    return points.map((p) => ({
+      name: p.label,
+      EAR: Number(p.ear.toFixed(3)),
+      MAR: Number(p.mar.toFixed(3)),
+      "Disagreement %": Number((p.disagreement * 100).toFixed(1)),
+    }));
+  }, [liveAnalytics]);
+
+  const liveExplanations = useMemo(() => {
+    const points = liveAnalytics?.live_points || [];
+    const fused = responseData?.hybrid_decision;
+    const explanations: string[] = [];
+
+    if (points.length === 0) {
+      return ["Collecting live analytics. Explanations will appear once enough data is available."];
+    }
+
+    const latest = points[points.length - 1];
+    const lookback = points[Math.max(0, points.length - 8)];
+    const riskNow = latest.risk_prob * 100;
+    const riskPrev = lookback.risk_prob * 100;
+    const slope = riskNow - riskPrev;
+
+    if (slope > 8) {
+      explanations.push(`Risk is rising quickly (+${slope.toFixed(1)} points over recent seconds). Driver fatigue may be increasing now.`);
+    } else if (slope < -8) {
+      explanations.push(`Risk is recovering (${slope.toFixed(1)} points over recent seconds). Alertness appears to be improving.`);
+    } else {
+      explanations.push(`Risk trend is relatively stable (${slope >= 0 ? '+' : ''}${slope.toFixed(1)} points over recent seconds).`);
+    }
+
+    const maxPred = Math.max(
+      ...(liveAnalytics?.future_predictions || []).map((p) => p.predictedRisk),
+      Number.NEGATIVE_INFINITY
+    );
+    if (Number.isFinite(maxPred)) {
+      if (maxPred > 60) {
+        explanations.push(`Prediction warns of future danger (forecast peak ${maxPred.toFixed(1)}). This can escalate system actions.`);
+      } else {
+        explanations.push(`Prediction remains below danger threshold (forecast peak ${maxPred.toFixed(1)}).`);
+      }
+    }
+
+    if (latest.uncertain) {
+      explanations.push(`Model disagreement is high (${(latest.disagreement * 100).toFixed(1)}%). System enters uncertainty-safe behavior to avoid false alarms.`);
+    } else {
+      explanations.push(`Live and snapshot agreement is acceptable (${(latest.disagreement * 100).toFixed(1)}% disagreement).`);
+    }
+
+    explanations.push(`Emotion shown is '${(latest.emotion_display || responseData?.emotion || 'neutral')}'. Reason: ${(latest.emotion_reason || responseData?.emotion_reason || 'raw')}.`);
+
+    if (fused) {
+      explanations.push(`Current fused decision: ${fused.status} (${(fused.risk_prob * 100).toFixed(1)}% risk probability).`);
+    }
+
+    return explanations.slice(0, 5);
+  }, [liveAnalytics, responseData]);
+
+  const exportLiveCsv = useCallback(() => {
+    const points = liveAnalytics?.live_points || [];
+    if (points.length === 0) return;
+
+    const headers = [
+      "timestamp",
+      "label",
+      "risk_prob",
+      "status",
+      "uncertain",
+      "disagreement",
+      "source_prob_live",
+      "source_prob_snapshot",
+      "ear",
+      "mar",
+      "yawn",
+      "emotion_raw",
+      "emotion_display",
+      "emotion_reason",
+    ];
+
+    const rows = points.map((p) => [
+      p.ts,
+      p.label,
+      p.risk_prob,
+      p.status,
+      p.uncertain,
+      p.disagreement,
+      p.source_probs?.live ?? "",
+      p.source_probs?.snapshot ?? "",
+      p.ear,
+      p.mar,
+      p.yawn,
+      p.emotion_raw,
+      p.emotion_display,
+      p.emotion_reason,
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `${v}`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `live_analytics_${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [liveAnalytics]);
+
+  const experimentSummary = useMemo(() => {
+    const points = liveAnalytics?.live_points || [];
+    if (points.length < 2) return null;
+
+    const start = points[0].ts;
+    const end = points[points.length - 1].ts;
+    const durationSec = Math.max(1, end - start);
+    const durationHours = durationSec / 3600.0;
+
+    const highRiskCount = points.filter((p) => p.risk_prob >= 0.68).length;
+    const uncertainCount = points.filter((p) => p.uncertain).length;
+    const avgRisk = points.reduce((s, p) => s + p.risk_prob, 0) / points.length;
+
+    let drowsyTransitions = 0;
+    for (let i = 1; i < points.length; i += 1) {
+      if (points[i - 1].status !== "Drowsy" && points[i].status === "Drowsy") {
+        drowsyTransitions += 1;
+      }
+    }
+
+    return {
+      durationSec,
+      avgRiskPct: avgRisk * 100,
+      highRiskPerHour: highRiskCount / durationHours,
+      uncertainPct: (uncertainCount / points.length) * 100,
+      drowsyTransitions,
+    };
+  }, [liveAnalytics]);
+
+  const predictionIsDrivingDecision = useMemo(() => {
+    const preds = responseData?.future_predictions || [];
+    return preds.some((p) => p.predictedRisk > 60);
   }, [responseData]);
+
 
   return (
     <div className="container-fluid min-vh-100 bg-light py-4">
@@ -883,7 +1105,7 @@ function App() {
                     {isPlaying ? (
                       <span className="fs-3">🎵</span>
                     ) : (
-                      <span className="fs-3" style={{ opacity: 0.5 }}>🔈</span>
+                      <span className="fs-3" style={{ opacity: 0.5 }}>🔇</span>
                     )}
                   </div>
                   <div className="ms-3">
@@ -909,7 +1131,7 @@ function App() {
                     <div className="btn-group shadow-sm w-100">
                       <button className="btn btn-primary fw-bold d-flex align-items-center justify-content-center flex-grow-1"
                         onClick={togglePause} disabled={!isPlaying} style={{ fontSize: '0.85rem' }}>
-                        {isPaused ? "▶ RESUME" : "⏸ PAUSE"}
+                        {isPaused ? "▶️ RESUME" : "⏸️ PAUSE"}
                       </button>
                       <button className="btn btn-outline-light d-flex align-items-center justify-content-center"
                         onClick={stopMusic} disabled={!isPlaying} style={{ fontSize: '0.85rem', maxWidth: '30%' }}>
@@ -948,7 +1170,7 @@ function App() {
                 {isPlaying && upcomingTracks.length > 0 && (
                   <div className="col-12 col-md-3 mt-3 mt-md-0 border-start border-secondary ps-md-3">
                     <h6 className="fw-bold mb-2 text-uppercase d-flex align-items-center" style={{ fontSize: '0.7rem', color: '#a0a0b8', letterSpacing: '1px' }}>
-                      <span className="me-2">⏭</span> Upcoming Queue
+                      <span className="me-2">⭐</span> Upcoming Queue
                     </h6>
                     <div className="d-flex flex-column gap-2">
                       {upcomingTracks.map((track, idx) => (
@@ -1007,20 +1229,38 @@ function App() {
               <div className="card-body text-center p-2">
                 {mode === "webcam" ? (
                   <div>
-                    <Webcam
-                      ref={webcamRef}
-                      audio={false}
-                      screenshotFormat="image/jpeg"
+                    {/* Python-powered MJPEG stream */}
+                    <img
+                      src="http://127.0.0.1:5000/video_feed"
                       className="w-100 rounded"
-                      videoConstraints={{
-                        width: 640,
-                        height: 480,
-                        facingMode: "user",
-                      }}
+                      style={{ objectFit: "cover", background: "#111", minHeight: "240px" }}
+                      alt="Live Driver Feed"
                     />
-                    <div className="mt-2">
-                      <span className="badge bg-info" style={{ fontSize: '0.7rem' }}>
-                        Auto-capturing every 3s
+                    {/* Real-time metric badges from /status poll */}
+                    {liveStatus && (
+                      <div className="d-flex gap-2 mt-2 flex-wrap justify-content-center">
+                        <span className={`badge ${liveStatus.ear < 0.22 ? 'bg-danger' : 'bg-success'}`}
+                          title="Eye Aspect Ratio">
+                          EAR: {liveStatus.ear.toFixed(3)}
+                        </span>
+                        <span className={`badge ${liveStatus.yawn ? 'bg-warning text-dark' : 'bg-secondary'}`}
+                          title="Mouth Aspect Ratio">
+                          MAR: {liveStatus.mar.toFixed(3)}{liveStatus.yawn ? ' 💤 Yawning' : ''}
+                        </span>
+                        <span className={`badge ${liveStatus.alert ? 'bg-danger' : liveStatus.model_status === 'Awake' ? 'bg-success' : 'bg-secondary'}`}>
+                          {liveStatus.model_status}
+                        </span>
+                        <span className="badge bg-info text-dark">
+                          {liveStatus.emotion}
+                        </span>
+                        {!liveStatus.face_detected && (
+                          <span className="badge bg-warning text-dark">No Face</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="mt-1">
+                      <span className="badge bg-primary" style={{ fontSize: '0.65rem' }}>
+                        Python-powered live stream
                       </span>
                     </div>
                   </div>
@@ -1175,6 +1415,38 @@ function App() {
                         </small>
                       </div>
                     </div>
+
+                    {responseData.hybrid_decision && (
+                      <div className="col-12 mt-1">
+                        <div className="alert alert-info border p-2 mb-0">
+                          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                            <small className="fw-bold" style={{ fontSize: '0.72rem' }}>
+                              Hybrid Fusion: {responseData.hybrid_decision.status}
+                            </small>
+                            <small style={{ fontSize: '0.70rem' }}>
+                              Risk Prob: {(responseData.hybrid_decision.risk_prob * 100).toFixed(1)}%
+                            </small>
+                            <small style={{ fontSize: '0.70rem' }}>
+                              Disagreement: {(responseData.hybrid_decision.disagreement * 100).toFixed(1)}%
+                            </small>
+                            <small style={{ fontSize: '0.70rem' }}>
+                              Uncertain: {responseData.hybrid_decision.uncertain ? 'Yes' : 'No'}
+                            </small>
+                          </div>
+                          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-1">
+                            <small style={{ fontSize: '0.68rem' }}>
+                              Emotion Display: {(responseData.emotion || 'neutral').toUpperCase()}
+                            </small>
+                            <small style={{ fontSize: '0.68rem' }}>
+                              Emotion Raw: {(responseData.emotion_raw || responseData.emotion || 'neutral').toUpperCase()}
+                            </small>
+                            <small style={{ fontSize: '0.68rem' }}>
+                              Reason: {responseData.emotion_reason || responseData.hybrid_decision.reason || 'raw'}
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   !loading && (
@@ -1279,179 +1551,209 @@ function App() {
             </div>
           )}
 
-          {/* 5 Minute Analysis Trends Chart Card (Right Side) */}
+          {/* ADAS Hybrid Physical Signals Chart */}
           <div className={`${isCameraMinimized ? 'col-lg-12' : 'col-lg-8'} mb-3`}>
             <div className="card shadow-sm h-100">
-              <div className="card-header bg-primary text-white d-flex justify-content-between align-items-center py-2">
-                <h6 className="mb-0">Research Analysis (Backend Powered)</h6>
-                <span className="badge bg-light text-dark" style={{ fontSize: '0.65rem' }}>5-Min Trends</span>
+              <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center py-2">
+                <h6 className="mb-0">ADAS Hybrid Analytics (Live + Historical)</h6>
+                <span className="badge bg-danger" style={{ fontSize: '0.65rem' }}>70% Physics · 30% Keras</span>
               </div>
               <div className="card-body p-3">
-                {!responseData ? (
+                <div className="alert alert-light border mb-3" role="alert">
+                  <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <strong style={{ fontSize: '0.78rem' }}>Live AI Explanations</strong>
+                    <div className="d-flex gap-2">
+                      <span className="badge bg-dark" style={{ fontSize: '0.65rem' }}>
+                        70% Physics · 30% Keras
+                      </span>
+                      <button
+                        className="btn btn-sm btn-outline-secondary"
+                        style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem' }}
+                        onClick={exportLiveCsv}
+                        disabled={(liveAnalytics?.live_points?.length || 0) === 0}
+                        title="Export current live analytics trace as CSV"
+                      >
+                        Export Live CSV
+                      </button>
+                    </div>
+                  </div>
+                  <div className="d-flex flex-column gap-1">
+                    {liveExplanations.map((msg, idx) => (
+                      <small key={idx} className="d-block" style={{ fontSize: '0.72rem' }}>
+                        {idx + 1}. {msg}
+                      </small>
+                    ))}
+                    <small className="d-block mt-1" style={{ fontSize: '0.70rem' }}>
+                      Prediction affects decisions: {predictionIsDrivingDecision ? 'Yes (future-risk trigger active now).' : 'Yes (logic active; no current danger forecast).'}
+                    </small>
+                  </div>
+                </div>
+
+                {experimentSummary && (
+                  <div className="alert alert-secondary border mb-3 py-2" role="alert">
+                    <div className="d-flex flex-wrap justify-content-between gap-2">
+                      <small style={{ fontSize: '0.70rem' }}><strong>Live Experiment Window:</strong> {Math.round(experimentSummary.durationSec)}s</small>
+                      <small style={{ fontSize: '0.70rem' }}><strong>Avg Risk:</strong> {experimentSummary.avgRiskPct.toFixed(1)}%</small>
+                      <small style={{ fontSize: '0.70rem' }}><strong>High-Risk Windows/hour:</strong> {experimentSummary.highRiskPerHour.toFixed(1)}</small>
+                      <small style={{ fontSize: '0.70rem' }}><strong>Uncertain %:</strong> {experimentSummary.uncertainPct.toFixed(1)}%</small>
+                      <small style={{ fontSize: '0.70rem' }}><strong>Drowsy Transitions:</strong> {experimentSummary.drowsyTransitions}</small>
+                    </div>
+                  </div>
+                )}
+
+                <h6 className="fw-semibold text-secondary mb-1" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live Fused Risk (1s) + Prediction Overlay</h6>
+                <div style={{ width: '100%', height: 210 }} className="mb-3">
+                  {liveRiskChartData.length === 0 ? (
+                    <div className="d-flex flex-column align-items-center justify-content-center h-100 rounded border" style={{ borderStyle: 'dashed' }}>
+                      <small className="text-muted">Waiting for 1-second live analytics stream...</small>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer>
+                      <ComposedChart data={liveRiskChartData} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ecef" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: '12px' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '11px' }} />
+                        <Area type="monotone" dataKey="Confidence Base" stackId="conf" stroke="none" fillOpacity={0} connectNulls />
+                        <Area type="monotone" dataKey="Confidence Range" stackId="conf" stroke="none" fill="#0d6efd" fillOpacity={0.12} connectNulls name="Confidence Envelope" />
+                        <Line type="monotone" dataKey="Live Fused Risk" stroke="#0d6efd" strokeWidth={2.5} dot={{ r: 2 }} connectNulls />
+                        <Line type="monotone" dataKey="Predicted Risk" stroke="#6610f2" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} connectNulls />
+                        <Line type="monotone" dataKey="Uncertain Marker" stroke="none" dot={{ r: 5, fill: '#dc3545', strokeWidth: 0 }} isAnimationActive={false} connectNulls={false} name="Uncertain Points" />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                <h6 className="fw-semibold text-secondary mb-1" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Live Physical Signals (1s): EAR · MAR · Disagreement</h6>
+                <div style={{ width: '100%', height: 180 }} className="mb-3">
+                  {liveSignalChartData.length === 0 ? (
+                    <div className="d-flex flex-column align-items-center justify-content-center h-100 rounded border" style={{ borderStyle: 'dashed' }}>
+                      <small className="text-muted">Waiting for live EAR/MAR signal buffer...</small>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer>
+                      <LineChart data={liveSignalChartData} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ecef" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: '12px' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '11px' }} />
+                        <Line type="monotone" dataKey="EAR" stroke="#198754" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="MAR" stroke="#fd7e14" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="Disagreement %" stroke="#6c757d" strokeDasharray="4 4" strokeWidth={1.8} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                <small className="text-muted d-block mb-2" style={{ fontSize: '0.70rem' }}>
+                  Live Fused Risk = observed hybrid risk now. Predicted Risk = backend projection for current/future minutes. EAR lower and MAR higher generally indicate rising drowsiness.
+                </small>
+
+                <hr className="my-3" />
+                <h6 className="fw-semibold text-secondary mb-2" style={{ fontSize: '0.74rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Historical Summary (Per Minute)</h6>
+
+                {!responseData || chartData.length === 0 ? (
                   <div className="d-flex flex-column align-items-center justify-content-center" style={{ height: '300px' }}>
                     <div className="spinner-border text-primary mb-3" role="status"></div>
-                    <p className="text-muted text-center">Waiting for first analysis result...</p>
+                    <p className="text-muted text-center">Waiting for first complete minute of data...</p>
+                    <small className="text-muted">Charts populate after ~{Math.round(60 / (60 / 20))}s of monitoring</small>
                   </div>
                 ) : (
                   <>
-                    {/* Current Minute Metrics Summary */}
-                    {currentMetrics && (
-                      <div className="row mb-4 bg-light p-3 rounded mx-0 shadow-sm">
-                        <div className="col-4 text-center border-end">
-                          <h6 className="text-muted mb-1" style={{ fontSize: "0.85rem" }}>
-                            Latest Drowsiness (Min {responseData?.minute_analysis?.[responseData.minute_analysis.length - 1]?.minute ?? '?'})
-                          </h6>
-                          <h3 className={currentMetrics.drowsyPercentage > 20 ? "text-danger" : "text-success"}>
-                            {currentMetrics.drowsyPercentage.toFixed(1)}%
-                          </h3>
-                        </div>
-                        <div className="col-4 text-center border-end">
-                          <h6 className="text-muted mb-1" style={{ fontSize: "0.85rem" }}>
-                            Latest Micro-sleeps (Min {responseData?.minute_analysis?.[responseData.minute_analysis.length - 1]?.minute ?? '?'})
-                          </h6>
-                          <h3 className={currentMetrics.microSleeps > 0 ? "text-warning" : "text-success"}>
-                            {currentMetrics.microSleeps}
-                          </h3>
-                        </div>
-                        <div className="col-4 text-center">
-                          <h6 className="text-muted mb-1" style={{ fontSize: "0.85rem" }}>
-                            Latest Max Streak (Min {responseData?.minute_analysis?.[responseData.minute_analysis.length - 1]?.minute ?? '?'})
-                          </h6>
-                          <h3 className={currentMetrics.maxConsecutiveDrowsy >= 3 ? "text-danger" : "text-success"}>
-                            {currentMetrics.maxConsecutiveDrowsy}
-                          </h3>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Trends Charts using Recharts */}
-                    <div className="row">
-                      <div className="col-12 col-lg-6 mb-4">
-                        <h6 className="text-center fw-bold text-secondary text-uppercase" style={{ fontSize: '0.8rem' }}>Drowsiness Percentage Trend</h6>
-                        <div style={{ width: '100%', height: 200 }}>
-                          <ResponsiveContainer>
-                            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                              <YAxis tick={{ fontSize: 12 }} domain={[0, 100]} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px' }}
-                                formatter={(value: any) => {
-                                  const val = Number(value || 0);
-                                  const status = val > 50 ? "🚨 Dangerous" : val > 20 ? "⚠️ Warning" : "✅ Normal";
-                                  return [`${val}% (${status})`, "Drowsiness"];
-                                }}
-                              />
-                              <Line type="monotone" dataKey="Drowsiness" stroke="#dc3545" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-
-                      <div className="col-12 col-lg-6 mb-4">
-                        <h6 className="text-center fw-bold text-secondary text-uppercase" style={{ fontSize: '0.8rem' }}>Risk Indicators Trend</h6>
-                        <div style={{ width: '100%', height: 200 }}>
-                          <ResponsiveContainer>
-                            <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                              <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-                              <Tooltip
-                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '11px' }}
-                                formatter={(value: any, name: any) => {
-                                  const val = Number(value || 0);
-                                  if (name === "Micro Sleeps") {
-                                    return [val, `${name} (Short unintentional sleep)`];
-                                  }
-                                  return [val, `${name} (Max consecutive drowsy records)`];
-                                }}
-                              />
-                              <Legend wrapperStyle={{ fontSize: "11px" }} />
-                              <Line type="monotone" name="Micro Sleeps" dataKey="MicroSleeps" stroke="#ffc107" strokeWidth={2} />
-                              <Line type="stepAfter" name="Max Drowsy Streak" dataKey="MaxStreak" stroke="#fd7e14" strokeWidth={2} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
+                    {/* Chart 1: Hybrid Risk Score Area */}
+                    <h6 className="fw-semibold text-secondary mb-1" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Hybrid Risk Score (0–100)</h6>
+                    <div style={{ width: '100%', height: 180 }} className="mb-3">
+                      <ResponsiveContainer>
+                        <AreaChart data={chartData} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
+                          <defs>
+                            <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#dc3545" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#dc3545" stopOpacity={0.0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ecef" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="" />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: '12px' }}
+                            formatter={(value: any) => {
+                              const v = Number(value || 0);
+                              const badge = v > 60 ? '🚨 CRITICAL' : v > 35 ? '⚠️ WARNING' : '✅ NORMAL';
+                              return [`${v.toFixed(1)} / 100  ${badge}`, 'Hybrid Risk Score'];
+                            }}
+                          />
+                          <Area type="monotone" dataKey="Risk Score" stroke="#dc3545" strokeWidth={2.5} fill="url(#riskGrad)" dot={{ r: 4, fill: '#dc3545' }} activeDot={{ r: 6 }} />
+                          <Line type="monotone" dataKey="Fused Risk %" stroke="#212529" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} connectNulls />
+                        </AreaChart>
+                      </ResponsiveContainer>
                     </div>
 
-                    {/* Prediction Chart - Full Width, 3 Sections */}
-                    {predictionChartData.length > 0 && (
-                      <div className="mt-2">
-                        <h6 className="text-center fw-bold text-secondary text-uppercase" style={{ fontSize: '0.8rem' }}>
-                          Drowsiness Prediction &nbsp;
-                          <span className="badge me-1" style={{ background: '#dc3545', fontSize: '0.65rem' }}>Actual</span>
-                          <span className="badge me-1" style={{ background: '#fd7e14', fontSize: '0.65rem' }}>Live (Current Min)</span>
-                          <span className="badge" style={{ background: '#6f42c1', fontSize: '0.65rem' }}>Forecast ···</span>
-                        </h6>
-                        <div style={{ width: '100%', height: 220 }}>
-                          <ResponsiveContainer>
-                            <LineChart data={predictionChartData} margin={{ top: 5, right: 30, bottom: 5, left: 0 }}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                              <XAxis
-                                dataKey="x"
-                                type="number"
-                                scale="linear"
-                                domain={['dataMin', (dataMax: number) => Math.max(5, dataMax)]}
-                                tickFormatter={(v: number) => Number.isInteger(v) ? `Min ${v}` : ''}
-                                tick={{ fontSize: 10 }}
-                                allowDecimals
-                                padding={{ left: 10, right: 10 }}
-                              />
-                              <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
-                              <Tooltip
-                                labelFormatter={(v) => {
-                                  const pt = predictionChartData.find(p => p.x === v);
-                                  return pt?.label ?? `x=${v}`;
-                                }}
-                                formatter={(value, name) => {
-                                  const label = name === 'actual' ? '🔴 Actual' : name === 'current' ? '🟠 Live Pred.' : '🟣 Forecast';
-                                  return [`${value ?? '-'}%`, label];
-                                }}
-                              />
-                              <Legend
-                                content={() => (
-                                  <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', fontSize: '10px', marginTop: '2px' }}>
-                                    <span><span style={{ display: 'inline-block', width: 12, height: 3, background: '#dc3545', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span>Actual</span>
-                                    <span><span style={{ display: 'inline-block', width: 12, height: 3, background: '#fd7e14', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span>Live (current min)</span>
-                                    <span><span style={{ display: 'inline-block', width: 12, height: 3, background: '#6f42c1', borderRadius: 2, marginRight: 4, verticalAlign: 'middle', borderTop: '2px dashed #6f42c1' }}></span>Future Forecast</span>
-                                  </div>
-                                )}
-                              />
-                              {/* Section 1: Actual completed-minute data */}
-                              <Line type="monotone" dataKey="actual" name="actual"
-                                stroke="#dc3545" strokeWidth={2.5}
-                                dot={{ r: 4 }} activeDot={{ r: 6 }}
-                                connectNulls={false} />
-                              {/* Section 2: Current-minute live prediction */}
-                              <Line type="monotone" dataKey="current" name="current"
-                                stroke="#fd7e14" strokeWidth={2.5}
-                                dot={{ r: 3, fill: '#fd7e14' }} activeDot={{ r: 5 }}
-                                connectNulls={false} />
-                              {/* Section 3: Future-minutes forecast */}
-                              <Line type="monotone" dataKey="future" name="future"
-                                stroke="#6f42c1" strokeWidth={2.5}
-                                strokeDasharray="7 4"
-                                dot={{ r: 3, fill: '#6f42c1' }} activeDot={{ r: 5 }}
-                                connectNulls={false} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </div>
-                    )}
-                    {/* Human Friendly Insights Section */}
-                    <AnalysisInsights
-                      insights={responseData?.insights || []}
-                      structured={responseData?.structured_analysis}
-                      frontendEar={responseData?.frontend_ear}
-                    />
+                    {/* Chart 2: PERCLOS + Yawn % combined */}
+                    <h6 className="fw-semibold text-secondary mb-1" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>PERCLOS (Eye Closure %) &amp; Yawn % per Minute</h6>
+                    <div style={{ width: '100%', height: 185 }} className="mb-3">
+                      <ResponsiveContainer>
+                        <AreaChart data={chartData} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
+                          <defs>
+                            <linearGradient id="perclosGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#0d6efd" stopOpacity={0.35} />
+                              <stop offset="95%" stopColor="#0d6efd" stopOpacity={0.0} />
+                            </linearGradient>
+                            <linearGradient id="yawnGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#fd7e14" stopOpacity={0.35} />
+                              <stop offset="95%" stopColor="#fd7e14" stopOpacity={0.0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ecef" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis domain={[0, 50]} tick={{ fontSize: 11 }} unit="%" />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: '12px' }}
+                            formatter={(value: any, name: any) => {
+                              const v = Number(value || 0);
+                              if (name === 'PERCLOS %') return [`${v.toFixed(1)}%  ${v >= 15 ? '🚨 Microsleep zone' : v >= 8 ? '⚠️ Elevated' : '✅ Normal'}`, 'PERCLOS (Eye Closure)'];
+                              return [`${v.toFixed(1)}%  ${v >= 25 ? '🥱 Heavy yawning' : '✅ Normal'}`, 'Yawn %'];
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '11px' }} />
+                          <Area type="monotone" dataKey="PERCLOS %" stroke="#0d6efd" strokeWidth={2} fill="url(#perclosGrad)" dot={{ r: 3 }} />
+                          <Area type="monotone" dataKey="Yawn %" stroke="#fd7e14" strokeWidth={2} fill="url(#yawnGrad)" dot={{ r: 3 }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Chart 3: Microsleeps + Fatigue Streak event bars */}
+                    <h6 className="fw-semibold text-secondary mb-1" style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Micro-sleep Events &amp; Max Fatigue Streak</h6>
+                    <div style={{ width: '100%', height: 140 }}>
+                      <ResponsiveContainer>
+                        <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 0, left: -10 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e9ecef" />
+                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.12)', fontSize: '11px' }}
+                            formatter={(value: any, name: any) => {
+                              if (name === 'Micro-sleeps') return [value, 'Micro-sleeps (PERCLOS ≥15%%)'];
+                              return [value, 'Max Consecutive Fatigue Records'];
+                            }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '11px' }} />
+                          <Line type="monotone" dataKey="Micro-sleeps" stroke="#dc3545" strokeWidth={2} dot={{ r: 4 }} />
+                          <Line type="stepAfter" dataKey="Fatigue Streak" stroke="#fd7e14" strokeWidth={2} dot={{ r: 3 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </>
                 )}
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
   );

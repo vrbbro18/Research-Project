@@ -13,10 +13,16 @@ session_record_count = 0   # absolute total of records added since start
 
 # ── History management ───────────────────────────────────────
 
-def add_record(status: str, emotion: str, timestamp: float):
+def add_record(status: str, emotion: str, timestamp: float, perclos: float = 0.0, yawn_pct: float = 0.0):
     """Append one analysis result to the rolling history."""
     global session_record_count
-    analysis_history.append({"status": status, "emotion": emotion, "timestamp": timestamp})
+    analysis_history.append({
+        "status": status, 
+        "emotion": emotion, 
+        "timestamp": timestamp,
+        "perclos": perclos,
+        "yawn_pct": yawn_pct
+    })
     session_record_count += 1
 
 
@@ -31,30 +37,54 @@ def clear_session():
 
 def calculate_metrics(chunk: list) -> dict:
     if not chunk:
-        return {"drowsyPercentage": 0, "microSleeps": 0, "maxConsecutiveDrowsy": 0}
+        return {"riskScore": 0, "microSleeps": 0, "maxConsecutiveFatigue": 0, "avgPerclos": 0, "avgYawn": 0}
 
-    total        = len(chunk)
-    drowsy_count = sum(1 for h in chunk if h["status"] == "Drowsy")
+    total = len(chunk)
+    total_risk = 0.0
+    micro_sleeps = 0
+    max_streak = cur_streak = 0
+    total_perclos = 0.0
+    total_yawn = 0.0
 
-    micro_sleeps = sum(
-        1 for i in range(1, total - 1)
-        if chunk[i-1]["status"] == "Awake"
-        and chunk[i]["status"]   == "Drowsy"
-        and chunk[i+1]["status"] == "Awake"
-    )
+    for idx, h in enumerate(chunk):
+        status  = h.get("status", "Awake")
+        perclos = h.get("perclos", 0.0)
+        yawn    = h.get("yawn_pct", 0.0)
 
-    max_streak = cur = 0
-    for h in chunk:
-        if h["status"] == "Drowsy":
-            cur += 1
-            max_streak = max(max_streak, cur)
+        total_perclos += perclos
+        total_yawn += yawn
+
+        # ── 1. Calculate Hybrid Risk Score (70% Physics, 30% Keras) ──
+        # Physics: Map PERCLOS (maxes at 20%) to 100 points
+        phys_eyes = min(perclos * 5.0, 100.0)
+        # Physics: Map Yawn (maxes at 50%) to 100 points
+        phys_yawn = min(yawn * 2.0, 100.0)
+        physics_score = max(phys_eyes, phys_yawn)
+
+        keras_score = 100.0 if status == "Drowsy" else 0.0
+
+        hybrid_score = (0.7 * physics_score) + (0.3 * keras_score)
+        total_risk += hybrid_score
+
+        # ── 2. Highly Accurate Microsleep Detection ──
+        # If PERCLOS > 15% in any 3-second window, it's a guaranteed microsleep
+        # (equivalent to ~0.45s of eyes totally closed)
+        if perclos >= 15.0:
+            micro_sleeps += 1
+            cur_streak += 1
+            max_streak = max(max_streak, cur_streak)
+        elif status == "Drowsy":
+            cur_streak += 1
+            max_streak = max(max_streak, cur_streak)
         else:
-            cur = 0
+            cur_streak = 0
 
     return {
-        "drowsyPercentage":     round(drowsy_count / total * 100, 1),
-        "microSleeps":          micro_sleeps,
-        "maxConsecutiveDrowsy": max_streak,
+        "riskScore":             round(total_risk / total, 1),
+        "microSleeps":           micro_sleeps,
+        "maxConsecutiveFatigue": max_streak,
+        "avgPerclos":            round(total_perclos / total, 1),
+        "avgYawn":               round(total_yawn / total, 1),
     }
 
 
@@ -117,7 +147,7 @@ def predict_future_drowsiness(actual_data: list, current_minute_pred: list, futu
     else:
         last_pt = actual_data[-1]
         last_x = float(last_pt.get("x", last_pt["minute"]))
-        last_val = float(last_pt["metrics"]["drowsyPercentage"])
+        last_val = float(last_pt["metrics"]["riskScore"])
 
     # 2. Extract y values for regression
     # Combine actual past points + current projected end to build an active curve
@@ -125,7 +155,7 @@ def predict_future_drowsiness(actual_data: list, current_minute_pred: list, futu
     ys = []
     for d in actual_data:
         xs.append(float(d.get("x", d["minute"])))
-        ys.append(float(d["metrics"]["drowsyPercentage"]))
+        ys.append(float(d["metrics"]["riskScore"]))
     
     # Adding the live partial minute allows the line to curve continuously 
     # instead of flattening out.
@@ -138,7 +168,7 @@ def predict_future_drowsiness(actual_data: list, current_minute_pred: list, futu
             {"minute": int(last_x + i + 1),
              "x":      float(last_x + i + 1),
              "label":  f"Min {int(last_x + i + 1)}",
-             "predictedDrowsiness": round(last_val, 1)}
+             "predictedRisk": round(last_val, 1)}
             for i in range(future_minutes)
         ]
 
@@ -153,7 +183,7 @@ def predict_future_drowsiness(actual_data: list, current_minute_pred: list, futu
             {"minute": int(last_x + i + 1),
              "x":      float(last_x + i + 1),
              "label":  f"Min {int(last_x + i + 1)}",
-             "predictedDrowsiness": round(float(np.clip(poly(last_x + i + 1), 0, 100)), 1)}
+             "predictedRisk": round(float(np.clip(poly(last_x + i + 1), 0, 100)), 1)}
             for i in range(future_minutes)
         ]
     except Exception as e:
@@ -183,16 +213,22 @@ def predict_current_minute(actual_data: list) -> list:
     last_complete_min = ((session_record_count - partial_count) // RECORDS_PER_MINUTE)
     current_min_num = last_complete_min + 1
 
-    # Running cumulative average
+    # Running cumulative average of riskScore
     running_pcts = []
-    drowsy_so_far = 0
+    drowsy_so_far = 0.0
     for idx, rec in enumerate(partial):
-        if rec["status"] == "Drowsy":
-            drowsy_so_far += 1
-        running_pcts.append(round(drowsy_so_far / (idx + 1) * 100, 1))
+        # inline hybrid score calculation for the partial prediction
+        perclos = rec.get("perclos", 0.0)
+        yawn = rec.get("yawn_pct", 0.0)
+        phys = max(min(perclos*5.0, 100.0), min(yawn*2.0, 100.0))
+        keras = 100.0 if rec["status"] == "Drowsy" else 0.0
+        score = (0.7 * phys) + (0.3 * keras)
+        
+        drowsy_so_far += score
+        running_pcts.append(round(drowsy_so_far / (idx + 1), 1))
 
     # Baseline for slope (either last complete minute or start of this min)
-    last_pct = actual_data[-1]["metrics"]["drowsyPercentage"] if actual_data else running_pcts[0]
+    last_pct = actual_data[-1]["metrics"]["riskScore"] if actual_data else running_pcts[0]
     current_pct = running_pcts[-1]
     
     # Linear projection to the end of minute
@@ -275,29 +311,28 @@ def generate_structured_analysis():
     cur_metrics = get_current_minute_metrics()
     
     # Latest reference values
-    latest_pct = cur_metrics["drowsyPercentage"] if cur_metrics else (minute_data[-1]["metrics"]["drowsyPercentage"] if minute_data else 0)
+    latest_score = cur_metrics["riskScore"] if cur_metrics else (minute_data[-1]["metrics"]["riskScore"] if minute_data else 0)
     latest_microsleeps = cur_metrics["microSleeps"] if cur_metrics else (minute_data[-1]["metrics"]["microSleeps"] if minute_data else 0)
-    latest_streak = cur_metrics["maxConsecutiveDrowsy"] if cur_metrics else (minute_data[-1]["metrics"]["maxConsecutiveDrowsy"] if minute_data else 0)
+    latest_streak = cur_metrics["maxConsecutiveFatigue"] if cur_metrics else (minute_data[-1]["metrics"]["maxConsecutiveFatigue"] if minute_data else 0)
 
     # 1. Drowsiness Assessment
-    if latest_pct > 50:
+    if latest_score > 60:
         drowsy_status = "CRITICAL"
-        drowsy_desc = f"Very high drowsiness ({latest_pct}%). Immediate risk of accident."
-    elif latest_pct > 25:
+        drowsy_desc = f"Extremely high fatigue profile (Score: {latest_score}). Immediate risk of accident."
+    elif latest_score > 35:
         drowsy_status = "WARNING"
-        drowsy_desc = f"Moderate drowsiness ({latest_pct}%). Driver is struggling to stay alert."
+        drowsy_desc = f"Moderate fatigue profile (Score: {latest_score}). Driver is struggling to stay alert."
     else:
         drowsy_status = "GOOD"
-        drowsy_desc = f"Alertness level is normal ({latest_pct}%)."
+        drowsy_desc = f"Alertness level is normal (Score: {latest_score})."
 
     # 2. Risk Indicators Assessment
-    # We look at microsleeps and streaks
     if latest_microsleeps > 1 or latest_streak >= 5:
         risk_status = "DANGER"
-        risk_desc = f"High risk: {latest_microsleeps} microsleeps and a {latest_streak}-record eye-closure streak."
+        risk_desc = f"High risk: {latest_microsleeps} confirmed PERCLOS microsleeps and high fatigue streak."
     elif latest_microsleeps > 0 or latest_streak >= 3:
         risk_status = "CAUTION"
-        risk_desc = "Early risk signs: Minor streaks or microsleeps detected."
+        risk_desc = "Early risk signs: Minor fatigue streaks or brief eye closures detected."
     else:
         risk_status = "MINIMAL"
         risk_desc = "No dangerous patterns detected in the last minute."
@@ -306,12 +341,12 @@ def generate_structured_analysis():
     trend_type = "STABLE"
     trend_desc = "Alertness remains consistent."
     if len(minute_data) >= 2:
-        prev_pct = minute_data[-1]["metrics"]["drowsyPercentage"]
-        prev_prev_pct = minute_data[-2]["metrics"]["drowsyPercentage"]
-        if prev_pct > prev_prev_pct + 8:
+        prev_pct = minute_data[-1]["metrics"]["riskScore"]
+        prev_prev_pct = minute_data[-2]["metrics"]["riskScore"]
+        if prev_pct > prev_prev_pct + 12:
             trend_type = "WORSENING"
-            trend_desc = "Drowsiness is rapidly increasing."
-        elif prev_pct < prev_prev_pct - 8:
+            trend_desc = "Fatigue is rapidly increasing."
+        elif prev_pct < prev_prev_pct - 12:
             trend_type = "IMPROVING"
             trend_desc = "Alertness levels are recovering."
 
@@ -331,10 +366,10 @@ def generate_insights():
     cur_metrics = get_current_minute_metrics()
     insights = []
     
-    latest_pct = cur_metrics["drowsyPercentage"] if cur_metrics else (minute_data[-1]["metrics"]["drowsyPercentage"] if minute_data else 0)
-    if latest_pct > 50:
-        insights.append("🚨 High drowsiness. Stop the vehicle immediately.")
-    elif latest_pct > 20:
+    latest_score = cur_metrics["riskScore"] if cur_metrics else (minute_data[-1]["metrics"]["riskScore"] if minute_data else 0)
+    if latest_score > 60:
+        insights.append("🚨 High fatigue profile. Stop the vehicle immediately.")
+    elif latest_score > 35:
         insights.append("⚠️ Signs of fatigue increasing.")
 
     total_microsleeps = sum(m["metrics"]["microSleeps"] for m in minute_data) + (cur_metrics["microSleeps"] if cur_metrics else 0)
@@ -360,17 +395,25 @@ def determine_music_action(current_status: str, current_emotion: str, structured
     # Check for immediate danger from future predictions
     future_danger = False
     if future_preds:
-        if any(p.get("predictedDrowsiness", 0) > 50 for p in future_preds):
+        if any(p.get("predictedRisk", 0) > 60 for p in future_preds):
             future_danger = True
 
     emotion_lower = current_emotion.lower()
 
-    # If currently drowsy, WE MUST WAKE THEM UP, regardless of emotion.
-    if current_status == "Drowsy":
-        # Overrule mild emotional tracking if they are falling asleep
+    # Determine currently yawning vs eyes closed heavily in the last few seconds
+    latest_records = list(analysis_history)[-2:] if len(analysis_history) >= 2 else []
+    recent_perclos = sum(r.get("perclos", 0.0) for r in latest_records) / max(1, len(latest_records))
+    recent_yawn    = sum(r.get("yawn_pct", 0.0) for r in latest_records) / max(1, len(latest_records))
+
+    # Priority 1: High PERCLOS (Eyes closed) -> Immediate Alarm
+    if recent_perclos > 15.0 or current_status == "Drowsy":
         return 'PLAY_ALARM' if drowsy_status in ["CRITICAL", "WARNING"] else 'PLAY_MODERATE_ALERT'
 
-    # CRITICAL SEVERITY (But currently awake, meaning they were recently very drowsy)
+    # Priority 2: High Yawning (Mouth open, but eyes awake) -> Upbeat wake-up
+    if recent_yawn > 25.0:
+        return 'PLAY_FAST_HAPPY'
+
+    # CRITICAL SEVERITY (Based on Hybrid fatigue trend)
     if drowsy_status == "CRITICAL" or risk_status == "DANGER" or future_danger:
         if emotion_lower == 'sad':
             return 'PLAY_FAST_HAPPY'
