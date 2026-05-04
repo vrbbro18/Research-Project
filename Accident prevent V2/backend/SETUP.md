@@ -66,3 +66,9 @@ Once the server is running, you can test it at:
 - Method: POST with multipart/form-data
 - File field: `file` (image file)
 - Optional field: `manual_emotion` (for manual emotion override)
+
+
+
+frontend terminal: npm run dev
+backend terminal : venv\Scripts\activate
+                 : python app.py

@@ -20,7 +20,9 @@ from research import (
 
 analyze_bp = Blueprint('analyze', __name__)
 
-TEMP_IMAGE_PATH = 'temp.jpg'
+# Use absolute path for Windows compatibility and to avoid Errno 22/13
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMP_IMAGE_PATH = os.path.join(BASE_DIR, 'temp_upload.jpg')
 
 
 @analyze_bp.route('/reset', methods=['POST'])
@@ -42,9 +44,10 @@ def analyze():
     manual_emotion    = request.form.get('manual_emotion', '').strip()
     manual_drowsiness = request.form.get('manual_drowsiness', '').strip()
 
-    file.save(TEMP_IMAGE_PATH)
-
     try:
+        # Save file to temp location
+        file.save(TEMP_IMAGE_PATH)
+
         if not cv2_available:
             raise RuntimeError("OpenCV not available for image processing.")
 
@@ -65,7 +68,7 @@ def analyze():
             print("⚠️  Drowsiness model unavailable → status Unknown")
 
         else:
-            pred = _models.drowsiness_model.predict(preprocess_for_drowsiness(eye_region))[0][0]
+            pred = _models.drowsiness_model.predict(preprocess_for_drowsiness(eye_region), verbose=0)[0][0]
             if pred < 0.5:
                 status, risk_level = 'Drowsy', 'HIGH'
                 print(f"Drowsiness pred={pred:.4f} → Drowsy (HIGH)")
@@ -96,7 +99,7 @@ def analyze():
             print(f"🔧 Manual override → emotion='{emotion}'")
 
         elif _models.emotion_model_available and _models.emotion_model is not None:
-            probs         = _models.emotion_model.predict(preprocess_for_emotion(face_region))[0]
+            probs         = _models.emotion_model.predict(preprocess_for_emotion(face_region), verbose=0)[0]
             emotion_index = int(np.argmax(probs))
             emotion       = EMOTION_LABELS[emotion_index].lower()
             print("📊 Emotion probabilities:")
@@ -140,8 +143,14 @@ def analyze():
         })
 
     except Exception as e:
+        print(f"❌ Error in /analyze: {e}")
         return jsonify({'error': str(e)}), 500
 
     finally:
-        if os.path.exists(TEMP_IMAGE_PATH):
-            os.remove(TEMP_IMAGE_PATH)
+        # Robustly try to remove the temp file
+        try:
+            if os.path.exists(TEMP_IMAGE_PATH):
+                os.remove(TEMP_IMAGE_PATH)
+        except Exception as e:
+            print(f"⚠️ Could not remove temp file: {e}")
+

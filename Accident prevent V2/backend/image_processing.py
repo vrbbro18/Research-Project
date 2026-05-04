@@ -23,10 +23,18 @@ def detect_face_and_eyes(image_path: str):
     img  = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade  = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-
-    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+    import os
+    face_path = os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml')
+    eye_path = os.path.join(cv2.data.haarcascades, 'haarcascade_eye.xml')
+    
+    face_cascade = cv2.CascadeClassifier(face_path)
+    eye_cascade  = cv2.CascadeClassifier(eye_path)
+    
+    if face_cascade.empty():
+        print(f"⚠️ Failed to load face cascade from {face_path}")
+        faces = ()
+    else:
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
 
     face_region = None
     eye_region  = None
@@ -41,8 +49,13 @@ def detect_face_and_eyes(image_path: str):
         # Search for eyes only in the upper 60 % of the face
         eye_search_h  = int(face_region_gray.shape[0] * 0.6)
         eye_search    = face_region_gray[0:eye_search_h, :]
-        eyes          = eye_cascade.detectMultiScale(eye_search, scaleFactor=1.1,
-                                                     minNeighbors=3, minSize=(20, 20))
+        
+        if eye_cascade.empty():
+            print(f"⚠️ Failed to load eye cascade from {eye_path}")
+            eyes = ()
+        else:
+            eyes = eye_cascade.detectMultiScale(eye_search, scaleFactor=1.1,
+                                                         minNeighbors=3, minSize=(20, 20))
 
         if len(eyes) >= 2:
             eyes_sorted = sorted(eyes, key=lambda e: e[0])
@@ -88,14 +101,22 @@ def preprocess_for_drowsiness(eye_region) -> np.ndarray:
     Input:  BGR or grayscale array
     Output: float32 array shaped (1, 128, 128, 3), values in [0, 1]
     """
-    img = (cv2.cvtColor(eye_region, cv2.COLOR_GRAY2RGB)
-           if len(eye_region.shape) == 2
-           else cv2.cvtColor(eye_region, cv2.COLOR_BGR2RGB))
-    img = cv2.resize(img, (128, 128))
+    if eye_region is None or eye_region.size == 0:
+        print("⚠️  Warning: eye_region is empty – using default 128x128 black image fallback.")
+        img = np.zeros((128, 128, 3), dtype='uint8')
+    else:
+        img = (cv2.cvtColor(eye_region, cv2.COLOR_GRAY2RGB)
+               if len(eye_region.shape) == 2
+               else cv2.cvtColor(eye_region, cv2.COLOR_BGR2RGB))
+        img = cv2.resize(img, (128, 128))
+
 
     # Optional debug save
     try:
-        cv2.imwrite('debug_drowsiness_input.jpg',
+        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        debug_path = os.path.join(base_dir, 'debug_drowsiness_input.jpg')
+        cv2.imwrite(debug_path,
                     cv2.cvtColor((img).astype('uint8'), cv2.COLOR_RGB2BGR))
     except Exception:
         pass
@@ -111,12 +132,21 @@ def preprocess_for_emotion(face_region) -> np.ndarray:
     Input:  grayscale array
     Output: float32 array shaped (1, 48, 48, 1), values in [0, 1]
     """
-    img = cv2.resize(face_region, (48, 48))
+    if face_region is None or face_region.size == 0:
+        print("⚠️  Warning: face_region is empty – using default 48x48 black image fallback.")
+        img = np.zeros((48, 48), dtype='uint8')
+    else:
+        img = cv2.resize(face_region, (48, 48))
+
 
     try:
-        cv2.imwrite('debug_emotion_input.jpg', img)
+        import os
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        debug_path = os.path.join(base_dir, 'debug_emotion_input.jpg')
+        cv2.imwrite(debug_path, img)
     except Exception:
         pass
+
 
     img = img.astype('float32') / 255.0
     print(f"📊 Emotion input shape={img.shape} min={img.min():.3f} max={img.max():.3f}")

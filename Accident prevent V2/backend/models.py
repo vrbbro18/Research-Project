@@ -30,17 +30,17 @@ def load_all_models():
 
     try:
         drowsiness_model = load_model(DROWSINESS_MODEL_PATH)
-        print("✅ Drowsiness model loaded successfully!")
+        print("[SUCCESS] Drowsiness model loaded successfully!")
     except Exception as e:
-        print(f"❌ Error loading drowsiness model: {e}")
+        print(f"[ERROR] Error loading drowsiness model: {e}")
         print("Drowsiness model is required. Exiting.")
         raise SystemExit(1)
 
     try:
         emotion_model           = load_model(EMOTION_MODEL_PATH)
         emotion_model_available = True
-        print("✅ Emotion model loaded successfully!")
+        print("[SUCCESS] Emotion model loaded successfully!")
     except Exception as e:
-        print(f"❌ Emotion model not found: {e}")
+        print(f"[ERROR] Emotion model not found: {e}")
         print("Defaulting to 'neutral' emotion.")
         emotion_model_available = False

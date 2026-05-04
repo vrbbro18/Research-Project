@@ -1,8 +1,11 @@
-# ── config.py ──────────────────────────────────────────────
-# Central configuration for model paths, labels, and constants.
+import os
 
-DROWSINESS_MODEL_PATH = 'models/drowsiness_model.h5'
-EMOTION_MODEL_PATH    = 'models/emotion_model.h5'
+# Central configuration for model paths, labels, and constants.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DROWSINESS_MODEL_PATH = os.path.join(BASE_DIR, 'models', 'drowsiness_model.h5')
+EMOTION_MODEL_PATH    = os.path.join(BASE_DIR, 'models', 'emotion_model.h5')
+
 
 # Map model output indices → human-readable labels
 DROWSINESS_LABELS = {0: 'Closed', 1: 'Open'}
